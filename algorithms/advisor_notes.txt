@@ -1,0 +1,37 @@
+na vsetky auta z jedneho dna
+OLP
+clanky online scheduling
+
+cenove funkcie ine
+
+llf a sllf v com sa lisia v tom co mam naprogramovane tu ideu nie vzorce co treba zmenit a pripadne ich porovnat
+vypoc cenu nabijania v case t
+
+
+llf
+online
+traditional scheduling algorithm, can be applied to smart/adaptive charging
+has unnecessary oscillations in charging rates
+evs are sorted from smallest laxity to highest laxity
+available capacity at time t P(t) is assigned to each ev, ev is charged up to
+min(r_i,e_i(t)), the amount of energy we charge each ev with we call maximum feasible charging rate
+which is calculated by bisection (zachary lee phd, acnsim, sllf books)
+only concerned about finishing jobs (not cost minisation, load flattening, grid support)
+
+how to use llf in combination with something to solve our optimisation problem
+1. if we are able to predict P(t), we can balance charging depending on the price
+2. charging rate value adjustement
+
+
+sllf
+online
+based on llf
+maximising minimum laxity for next timestep
+uses 2. technique for improving llf
+only concerned about finishing jobs (not cost minisation, load flattening, grid support)
+
+
+
+OPT
+offline
+linear problem optimisation

@@ -4,11 +4,10 @@ from datetime import datetime, timedelta
 import json
 import pandas as pd
 import numpy as np
-from numpy import number
-
-from opt_algorithm import OPT
 import matplotlib.pyplot as plt
+from cvxpy import SolverError
 
+from sLLF_alg import SmoothedLeastLaxityAlg
 
 def datetime_to_timestamp(start, chosen_date, period, round_up=False):
     """ Convert a datetime object to a timestamp measured in simulation periods.
@@ -99,6 +98,8 @@ def convert_to_evs(
 
     # chosen_evs = random.sample(evs,max_amount_of_evs)
     return randomly_chosen_evs, randomly_chosen_evs_not_normalised_time
+
+
 
 def create_table(charging_profiles_matrix,
                  charging_cost_vector,
@@ -193,34 +194,42 @@ def save_evs_to_file(filename, evs:list, evs_with_time_not_normalised:list, time
             else:
                 f.write(f'auto {i}:  a_{i} = {arrival}, '
                         f'd_{i} = {departure}, r_{i} = {maximum_charging_rate} kW\n')
-# finding  minimal P_t
 
-def bisection_search_Pt_offline(evs,
-                                period=5,
-                                error_tol=1e-4,
-                                num_of_days=1):
+
+
+
+
+def bisection_search_Pt(EVs,
+                        start,
+                        end,
+                        algorithm,
+                        period=5,
+                        error_tol=1e-8,
+                        cost_function=None):
     lb_Pt = 0
-    ub_Pt = sum([ev[-1] for ev in evs])
+    ub_Pt = sum([ev[-1] for ev in EVs])
     while abs(ub_Pt - lb_Pt) >= error_tol:
         middle = (lb_Pt + ub_Pt) / 2
 
-        scheduling_alg = OPT(EVs=evs,
-                             P_t=middle,
+        scheduling_alg = algorithm(EVs=EVs,
+                             start=start,
+                             end=end,
+                             available_energy_for_each_timestep=middle,
                              time_between_timesteps=period,
-                             num_of_days=num_of_days,
-                             price_function=None)
+                             cost_function=cost_function,
+                             process_output=False)
 
-        charging_rates = scheduling_alg.solve()
-        # energy_charged = np.sum(charging_rates, axis=1)
-        requested_energy_index = 3
-        # correct_solution = [ev[requested_energy_index] for ev in evs] == [ev for ev in energy_charged]
+        try:
+            is_solution_feasible, charging_rates = scheduling_alg.solve()
 
-        if charging_rates is not None:
+        except SolverError:
+            is_solution_feasible, charging_rates = False, None
+
+
+        if is_solution_feasible:
             ub_Pt = middle
         else:
             lb_Pt = middle
-
-
 
     return ub_Pt
 
