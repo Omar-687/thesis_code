@@ -1,9 +1,11 @@
-Poèet áut = 9
-zaciatok nabíjania = 2018-04-26 00:00:00
-koniec nabíjania = 2018-04-26 23:59:59
-Dåžka èasového horizontu T = 288
-Cenová funkcia: c_nt = t
-P(t) = 0.5292839431762693
-Èas medzi susednými èasovými krokmi = 5 min
-Použitý algoritmus = OPT
-Použitý LP solver = ECOS
+Pocet aut = 6
+zaciatok nabijania = 2018-04-26 00:00:00
+koniec nabijania = 2018-04-26 23:59:59
+Dlzka casoveho horizontu T = 576
+Cenova funkcia: c_nt = t
+Pocet nabijaciek = 54
+Data o autach sme ziskali z nabijacich stanic  a z ich garazi 
+P(t) = 1000
+Cas medzi susednymi casovymi krokmi = 5 min
+Pouzity algoritmus = OPT
+Pouzity LP solver = ECOS
