@@ -1,0 +1,5 @@
+{
+    "Reward": "o1*sum_{i in active evs}||s_t(i)|| - o2* sum_{i in active evs} I(t = d(i))[e_{t}(j)]",
+    "o1": 1,
+    "o2": 0.5
+}

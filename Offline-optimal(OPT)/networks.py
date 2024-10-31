@@ -10,3 +10,6 @@ office_01_garages = ['Parking_Lot_01']
 # files names in general
 txt_ev_info_filename = 'evs_data.txt'
 settings_filename = 'settings.txt'
+
+
+

@@ -19,13 +19,21 @@ class OPT(SchedulingAlg):
                  start:datetime,
                  end:datetime,
                  available_energy_for_each_timestep,
+                 ut_interval=None,
+                 gamma=1,
                  time_between_timesteps=5,
                  accuracy=1e-8,
                  number_of_evse=54,
                  cost_function=None,
                  process_output=True,
-                 costs_loaded_manually=None
+                 costs_loaded_manually=None,
+                 info_about_future_costs=True,
+                 power_levels=10,
+                 is_u_discrete=False,
+                 # no need to add parameters suited for current timestep optimisation
+                 # when we use OPT only for time horizon optimisation
                  ):
+        # change accuracy possibly
         if accuracy != 1e-8:
             raise ValueError('Accuracy of ECOS solver is 1e-8')
         super().__init__(EVs=EVs,
@@ -37,12 +45,16 @@ class OPT(SchedulingAlg):
                          number_of_evse=number_of_evse,
                          cost_function=cost_function,
                          process_output=process_output,
-                         costs_loaded_manually=costs_loaded_manually)
+                         costs_loaded_manually=costs_loaded_manually,
+                         info_about_future_costs=info_about_future_costs)
         self.algorithm_name = 'OPT'
-    # TODO: fix it by not repeatedly adding constraints but progressively increase size of one constraint
-    
+        self.power_levels = power_levels
+        # gamma should be above 0
+        self.gamma = gamma
+        self.is_u_discrete = is_u_discrete
+        self.ut_interval = ut_interval
     def solve(self, verbose=False):
-        constraints = []
+
         # matrix N*T
         all_charging_profiles_rn = cp.Variable(shape=(len(self.EVs), len(self.time_horizon)))
         lb = np.zeros(shape=(len(self.EVs), len(self.time_horizon)))
@@ -50,38 +62,45 @@ class OPT(SchedulingAlg):
         all_ev_demanded_energy = np.zeros(shape=(len(self.EVs)))
         all_ev_maximum_charging_rate_matrix = np.zeros(shape=(len(self.EVs), len(self.time_horizon)))
         evs_remaining_energy_to_be_charged = {}
+
         for ev in self.EVs_indexed:
             index, ev_arrival, ev_departure, ev_maximum_charging_rate, ev_requested_energy = ev
             all_ev_demanded_energy[index] = ev_requested_energy
             evs_remaining_energy_to_be_charged[index] = ev_requested_energy
             all_ev_maximum_charging_rate_matrix[index, ev_arrival : ev_departure + 1] += ev_maximum_charging_rate
 
+        constraints = []
         constraints.append(lb <= all_charging_profiles_rn)
+        # constraints.append(all_charging_profiles_rn <= all_ev_maximum_charging_rate_matrix)
+        constraints.append(cp.sum(all_charging_profiles_rn, axis=1)  == (self.gamma * all_ev_demanded_energy))
         constraints.append(all_charging_profiles_rn <= all_ev_maximum_charging_rate_matrix)
-        constraints.append(cp.sum(all_charging_profiles_rn, axis=1) == all_ev_demanded_energy)
-        constraints.append(cp.sum(all_charging_profiles_rn, axis=0) <= self.available_energy_for_each_timestep)
-        # add evse if possible
-        # price_vector = self.get_cost_vector()
-        price_matrix = self.cost_vector.reshape((self.cost_vector.shape[0], 1))
+        if self.ut_interval is None:
+            constraints.append(cp.sum(all_charging_profiles_rn, axis=0) <= self.available_energy_for_each_timestep)
+        elif self.ut_interval is not None and not self.is_u_discrete:
+            lower_bound_ut, upper_bound_ut = self.ut_interval
+            constraints.append(lower_bound_ut <= cp.sum(all_charging_profiles_rn, axis=0))
+            constraints.append(cp.sum(all_charging_profiles_rn, axis=0) <= upper_bound_ut)
+
+        # this part is probably not necessary
+        elif self.ut_interval is not None and self.is_u_discrete:
+            binary_matrix = cp.Variable((10, len(self.time_horizon)), boolean=True)
+            arr_of_ones = np.ones(shape=(len(self.time_horizon)))
+            constraints.append(cp.sum(binary_matrix, axis=0) == arr_of_ones)
+
+            ut_signal = np.linspace(0,150,num=self.power_levels)
+            all_ut_signals = np.tile(ut_signal,(len(self.time_horizon), 1)).T
+            res_uts = cp.sum(cp.multiply(binary_matrix, all_ut_signals), axis=0)
+            constraints.append(cp.sum(all_charging_profiles_rn, axis=0) == res_uts)
+
+
         objective = all_charging_profiles_rn @ self.cost_vector
         objective = cp.sum(cp.sum(objective, axis=0))
-        for timestep in self.time_horizon:
-            active_evs = self.get_active_evs_connected_to_evses(
-                evs=self.EVs_indexed,
-                evs_remaining_energy_to_be_charged=evs_remaining_energy_to_be_charged,
-                timestep=timestep)
-            prob = cp.Problem(cp.Minimize(objective), constraints)
+
+
+        prob = cp.Problem(cp.Minimize(objective), constraints)
 
             # default solver without specifying is ECOS - a LP solver
-            prob.solve(solver=cp.ECOS, verbose=verbose)
-            lb_col = np.zeros(shape=all_charging_profiles_rn[timestep,:].shape)
-            ub_col = get_maximum_possible_charging_values_given_schedule(
-                active_evs=active_evs,
-                schedule=all_charging_profiles_rn[timestep,:],
-                maximum_charging_rates_matrix=all_ev_maximum_charging_rate_matrix)
-            constraints.append(all_charging_profiles_rn.value[timestep, :])
-            if prob.status in ['infeasible', 'unbounded', 'infeasible_inaccurate', 'optimal_inaccurate']:
-                return False, None
+        prob.solve(solver=cp.SCIP, verbose=verbose)
 
 
 
@@ -111,6 +130,7 @@ class OPT(SchedulingAlg):
                     EVs=self.EVs,
                     charging_rates=res,
                     available_energy_for_each_timestep=self.available_energy_for_each_timestep,
+                    gamma=self.gamma,
                     algorithm_name=self.algorithm_name
             ):
                 return False, None

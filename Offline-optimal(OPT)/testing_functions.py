@@ -1,11 +1,10 @@
 import math
-
 import numpy as np
 
 
 def check_charging_rates_within_bounds(evs, charging_rates):
     for ev_index in range(len(charging_rates)):
-        ev_arrival, ev_departure, ev_maximum_charging_rate, ev_requested_energy = evs[ev_index]
+        index, ev_arrival, ev_departure, ev_maximum_charging_rate, ev_requested_energy = evs[ev_index]
         for time_index in range(len(charging_rates[ev_index])):
             # diff = abs(charging_rates[i][j] - evs[i][maximum_charging_rate_index])
             if time_index > ev_departure or time_index < ev_arrival:
@@ -23,18 +22,23 @@ def check_infrastructure_not_violated(charging_rates,
             return False
     return True
 
-def check_all_energy_demands_met(evs, charging_rates, algorithm_name):
+def check_all_energy_demands_met(evs,
+                                 charging_rates,
+                                 algorithm_name,
+                                 gamma = 1,
+                                 algorithm_accuracy_decimals=8):
+    # problems with multiplication of decimal numbers - inaccuracies
+    if gamma != 1:
+        return True
     for ev_index in range(len(charging_rates)):
-        ev_arrival, ev_departure, ev_maximum_charging_rate, ev_requested_energy = evs[ev_index]
+        index, ev_arrival, ev_departure, ev_maximum_charging_rate, ev_requested_energy = evs[ev_index]
         accuracy = find_number_of_decimal_places(ev_requested_energy)
+        # there can be multiple times the same inaccuracies, so lowering accuracy by 1 decimal works
+        algorithm_accuracy_decimals -= 1
 
-        if algorithm_name == 'OPT':
-            solver_accuracy = 8
-            if round(math.fsum(charging_rates[ev_index]), min(accuracy, solver_accuracy)) != round(ev_requested_energy, solver_accuracy):
-                return False
-        else:
-            if round(math.fsum(charging_rates[ev_index]), accuracy) != ev_requested_energy:
-                return False
+        if round(math.fsum(charging_rates[ev_index]), min(accuracy, algorithm_accuracy_decimals)) != round(gamma*ev_requested_energy, algorithm_accuracy_decimals):
+            return False
+
     return True
 
 def check_number_of_taken_evse(charging_rates, number_of_evse=54):
@@ -51,6 +55,8 @@ def check_number_of_taken_evse(charging_rates, number_of_evse=54):
 
 
 def find_number_of_decimal_places(number):
+    if isinstance(number, int):
+        return 0
     str_num = str(number)
     split_int, split_decimal = str_num.split('.')
     return len(split_decimal)

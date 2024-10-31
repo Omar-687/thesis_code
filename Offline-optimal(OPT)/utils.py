@@ -1,17 +1,19 @@
 import copy
 import math
 import random
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from stable_baselines3.common.logger import Figure
 from cvxpy import SolverError
 import gzip, csv
+from pathlib import Path
+from stable_baselines3.common.callbacks import BaseCallback
 import os
-
-from keras.src.metrics.accuracy_metrics import accuracy
-
+import pytz
 from networks import *
 import pkg_resources
 import importlib.resources
@@ -30,7 +32,7 @@ def check_package_exists(package_name):
     except pkg_resources.DistributionNotFound:
         print(f'The package "{package_name}" is not installed.')
 
-
+# the connection time should be between start and end
 def check_date_within_interval(file_date:datetime, start:datetime, end:datetime):
     if start <= file_date <= end:
         return True
@@ -43,21 +45,24 @@ def is_weekend(date):
 def check_time_series_file_correctness(file_name,
                                        start:datetime,
                                        end:datetime,
-                                       include_weekends=False):
+                                       include_weekends=False,
+                                       ):
     # only files with this format are accepted, and the further checking of gzipped files is elsewhere
     if not file_name.endswith('.csv.gz'):
         return False
     splitted_string = file_name.split('-')[4:-1]
     file_date_arr = splitted_string[:2] + splitted_string[2].split('T') + splitted_string[3:]
 
+    la_lt = pytz.timezone('America/Los_Angeles')
     year, month, day, hour, minute, second = file_date_arr
+    # utc is default timezone
     file_date = datetime(int(year),
                          int(month),
                          int(day),
                          int(hour),
                          int(minute),
-                         int(second),
-                         tzinfo=timezone.utc)
+                         int(second),tzinfo=timezone.utc)
+    file_date = file_date.astimezone(la_lt)
 
     if not check_date_within_interval(file_date=file_date,
                                       start=start,
@@ -69,48 +74,66 @@ def check_time_series_file_correctness(file_name,
 
     return True
 
+
+def datetime_to_timestamp(start, chosen_date, period, round_up=False):
+    ts = (chosen_date - start) / timedelta(minutes=period)
+    if round_up:
+        return int(math.ceil(ts))
+    else:
+        return int(ts)
+
 def read_and_extract_time_series_ev_info(file,
                                          start,
                                          period,
-                                         reset_timestamp_after_each_day=True,
                                          max_charging_rate_within_interval=None):
 
     lines = None
     try:
         lines = file.readlines()
-    except (OSError, ValueError):
-        return False, []
+    except gzip.BadGzipFile:
+        return False, None, None
 
     # first line is notation
     # second line should be start of charging
     # last line is end of charging possibly
+    # the charging sessions with one timestep are useless and probably not included in authors implementation
     if len(lines) < 3:
-         return False, []
-    energy_index = -2
+         return False, None, None
 
     # Get the last and second last lines
     second_line_start_charging_date = datetime.fromisoformat(lines[1].split(',')[0])
     last_line_end_charging_date = datetime.fromisoformat(lines[-1].split(',')[0])
     second_last_line_delivered_energy = 0
-    if lines[-2].split(',')[energy_index] != '':
-        second_last_line_delivered_energy = float(lines[-2].split(',')[energy_index])
+    # if lines[-2].split(',')[energy_index] != '':
+    #     second_last_line_delivered_energy = float(lines[-2].split(',')[energy_index])
+
+    #
+    for i in range(len(lines)-1, 0, -1):
+        state = lines[i].split(',')[4]
+        if state != 'UNPLUGGED':
+            energy_delivered = lines[i].split(',')[5]
+            if len(energy_delivered) == 0:
+                second_last_line_delivered_energy = 0
+                break
+            second_last_line_delivered_energy = float(energy_delivered)
+            break
 
     # delete evs that have not charged anything
     if second_last_line_delivered_energy == 0:
-        return False, []
-    start_of_day = second_line_start_charging_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    arrival_time = second_line_start_charging_date
-    departure_time = last_line_end_charging_date
+        return False, None, None
+    la_lt = pytz.timezone('America/Los_Angeles')
+    start_of_day = second_line_start_charging_date.astimezone(la_lt).replace(hour=0, minute=0, second=0, microsecond=0)
+    arrival_time = second_line_start_charging_date.astimezone(la_lt)
+    departure_time = last_line_end_charging_date.astimezone(la_lt)
     energy_requested = second_last_line_delivered_energy
 
-    if reset_timestamp_after_each_day:
-        arrival_timestamp = datetime_to_timestamp(start=start_of_day, chosen_date=arrival_time, period=period)
-        departure_timestamp = datetime_to_timestamp(start=start_of_day, chosen_date=departure_time, period=period)
-    else:
-        arrival_timestamp = datetime_to_timestamp(start=start, chosen_date=arrival_time,
-                                                  period=period)
-        departure_timestamp = datetime_to_timestamp(start=start, chosen_date=departure_time,
-                                                    period=period)
+    arrival_timestamp_reseted = datetime_to_timestamp(start=start_of_day, chosen_date=arrival_time, period=period)
+    departure_timestamp_reseted = datetime_to_timestamp(start=start_of_day, chosen_date=departure_time, period=period)
+
+    arrival_timestamp = datetime_to_timestamp(start=start, chosen_date=arrival_time,
+                                              period=period)
+    departure_timestamp = datetime_to_timestamp(start=start, chosen_date=departure_time,
+                                                period=period)
 
 
     max_charging_rate = (2 * energy_requested) / (departure_timestamp - arrival_timestamp + 1)
@@ -118,68 +141,98 @@ def read_and_extract_time_series_ev_info(file,
     if max_charging_rate_within_interval is not None:
         max_charging_rate = random.uniform(max_charging_rate_within_interval[0],
                                            max_charging_rate_within_interval[1])
-    return True, [start_of_day,
+    res_ev_reseted = [start_of_day,
+                  arrival_time,
+                  arrival_timestamp_reseted,
+                  departure_time,
+                  departure_timestamp_reseted,
+                  max_charging_rate,
+                  energy_requested]
+    res_ev_not_reseted = [start_of_day,
                   arrival_time,
                   arrival_timestamp,
                   departure_time,
                   departure_timestamp,
                   max_charging_rate,
                   energy_requested]
+    return True, res_ev_reseted, res_ev_not_reseted
 # used for testing and training purposes of RL algorithm
 # preferrably with bigger amount of cars, so it is undesirable to choose random n cars, RL algorithm might not work then
-
-def filter_evs(date_to_evs_diction:dict,
+# TODO: fix rest of algorithm, but for now it is better to leave it like that for test purposes
+# if we want random n of evs we can choose it outside of the function
+def filter_evs(date_to_evs_diction_timestamp_reseted:dict,
+               date_to_evs_diction_timestamp_not_reseted:dict,
                date_to_evs_diction_time_not_normalised:dict,
-               amount_of_evs_interval,
-               include_days_with_less_than_30_charging_sessions:bool):
+               number_of_evs_interval):
 
-    res_diction = {}
+    res_diction_timestamp_reseted = {}
+    res_diction_timestamp_not_reseted = {}
     res_diction_time_not_normalised = {}
-    if not include_days_with_less_than_30_charging_sessions:
-        for key, value in date_to_evs_diction.items():
-            if len(value) < 30:
+
+    index_of_ev = 0
+    if number_of_evs_interval is not None:
+        for key, value in date_to_evs_diction_timestamp_reseted.items():
+            if number_of_evs_interval[0] <= len(value) < number_of_evs_interval[1]:
+                ...
+            else:
                 continue
-            res_diction[key] = value
-            res_diction_time_not_normalised[key] = date_to_evs_diction_time_not_normalised[key]
+            if res_diction_timestamp_reseted.get(key) is None:
+                res_diction_timestamp_reseted[key] = []
+                res_diction_timestamp_not_reseted[key] = []
+                res_diction_time_not_normalised[key] = []
 
-        date_to_evs_diction.clear()
-        date_to_evs_diction_time_not_normalised.clear()
-        date_to_evs_diction = copy.deepcopy(res_diction)
-        date_to_evs_diction_time_not_normalised = copy.deepcopy(res_diction_time_not_normalised)
+            for i, ev in enumerate(value,0):
+                res_diction_timestamp_reseted[key].append([index_of_ev] + ev)
+                res_diction_timestamp_not_reseted[key].append([index_of_ev] + date_to_evs_diction_timestamp_not_reseted[key][i])
+                res_diction_time_not_normalised[key].append([index_of_ev] + date_to_evs_diction_time_not_normalised[key][i])
+                index_of_ev += 1
+    else:
+        res_diction_timestamp_reseted = deepcopy(date_to_evs_diction_timestamp_reseted)
+        res_diction_timestamp_not_reseted = deepcopy(date_to_evs_diction_timestamp_not_reseted)
+        res_diction_time_not_normalised = deepcopy(date_to_evs_diction_time_not_normalised)
+        # date_to_evs_diction.clear()
+        # date_to_evs_diction_time_not_normalised.clear()
+        # date_to_evs_diction = copy.deepcopy(res_diction)
+        # date_to_evs_diction_time_not_normalised = copy.deepcopy(res_diction_time_not_normalised)
 
-    if amount_of_evs_interval is not None:
-        all_evs = []
-        all_evs_not_normalised = []
-        for key in date_to_evs_diction.keys():
-            for ev in date_to_evs_diction[key]:
-                all_evs.append([key, ev])
-            for ev in date_to_evs_diction_time_not_normalised[key]:
-                all_evs_not_normalised.append([key, ev])
-        num_of_evs = random.randint(amount_of_evs_interval[0],
-                                    amount_of_evs_interval[1])
+    # if amount_of_evs_interval is not None:
+    #     all_evs = []
+    #     all_evs_not_normalised = []
+    #     for key in date_to_evs_diction.keys():
+    #         for ev in date_to_evs_diction[key]:
+    #             all_evs.append([key, ev])
+    #         for ev in date_to_evs_diction_time_not_normalised[key]:
+    #             all_evs_not_normalised.append([key, ev])
+    #     num_of_evs = random.randint(amount_of_evs_interval[0],
+    #                                 amount_of_evs_interval[1])
+    #
+    #     res_diction.clear()
+    #     res_diction_time_not_normalised.clear()
+    #
+    #     res_diction, res_diction_time_not_normalised = random_choice_evs_dict(evs=all_evs,
+    #                                                                           evs_time_not_normalised=all_evs_not_normalised,
+    #                                                                           num_of_evs=num_of_evs)
+    # if res_diction == {}:
+    #     res_diction = copy.deepcopy(date_to_evs_diction)
+    #     res_diction_time_not_normalised = copy.deepcopy(date_to_evs_diction_time_not_normalised)
 
-        res_diction.clear()
-        res_diction_time_not_normalised.clear()
+    return res_diction_timestamp_reseted, res_diction_timestamp_not_reseted, res_diction_time_not_normalised
+def convert_evs_diction_to_array(evs_diction):
+    res = []
+    for key, value in evs_diction.items():
+        for ev in value:
+            res.append(ev)
+    return res
 
-        res_diction, res_diction_time_not_normalised = random_choice_evs_dict(evs=all_evs,
-                                                                              evs_time_not_normalised=all_evs_not_normalised,
-                                                                              num_of_evs=num_of_evs)
-    if res_diction == {}:
-        res_diction = copy.deepcopy(date_to_evs_diction)
-        res_diction_time_not_normalised = copy.deepcopy(date_to_evs_diction_time_not_normalised)
-
-    return res_diction, res_diction_time_not_normalised
-# TODO: include days with less than 30 charging sessions generalise for x charging sessions
 def load_time_series_ev_data(charging_network:str,
                              garages:list,
                              start:datetime,
                              end:datetime,
                              period,
-                             amount_of_evs_interval=None,
+                             number_of_evs_interval=None,
                              max_charging_rate_within_interval=None,
-                             reset_timestamp_after_each_day=True,
                              include_weekends=False,
-                             include_days_with_less_than_30_charging_sessions=False):
+                             dir_where_is_projected_cloned =fr'C:\Users\OMI\Documents\thesisdata'):
 
 
     charging_netw_dict = {charging_networks[0]: caltech_garages,
@@ -192,89 +245,399 @@ def load_time_series_ev_data(charging_network:str,
         raise ValueError(f'Charging network with name {charging_network} does not have at least one garage from list: {garages}!\n')
 
 
-    date_to_evs_diction = {}
+    date_to_evs_diction_timestamp_reseted = {}
+    date_to_evs_diction_timestamp_not_reseted = {}
     date_to_evs_diction_time_not_normalised = {}
 
-    check_package_exists('ACNDataStatic')
-    # subdirectory = 't'
-    with (importlib.resources.path('ACNDataStatic', '.') as package_path):
-        package_dir = Path(package_path)
+    # check_package_exists('ACNDataStatic')
 
-        # Construct the full path to the subdirectory you want to access
+    base_path = r'C:\Users\OMI\Documents\thesisdata'
+    for i in range(len(garages)):
+        path_to_files = dir_where_is_projected_cloned + fr'\ACN-Data-Static\time series data\{charging_network}\{garages[i]}'
+        package_dir = Path(path_to_files)
+        # Check if the subdirectory exists
+        if os.path.isdir(package_dir):
+            # List all files in the subdirectory
+            for csv_file in package_dir.iterdir():
+                file_name = csv_file.name
 
-        for i in range(len(garages)):
-            subdirectory = f'time series data/{charging_network}/{garages[i]}'
-            subdirectory_path = package_dir / subdirectory
-            # Check if the subdirectory exists
-            if subdirectory_path.is_dir():
-                # List all files in the subdirectory
-                for item in subdirectory_path.iterdir():
-                    file_name = item.name
+                if not check_time_series_file_correctness(
+                        file_name=file_name,
+                        start=start,
+                        end=end,
+                        include_weekends=include_weekends):
+                    continue
 
-                    if not check_time_series_file_correctness(
-                            file_name=file_name,
-                            start=start,
-                            end=end,
-                            include_weekends=include_weekends):
+                if not is_gzipped(csv_file):
+                    continue
+
+                with gzip.open(csv_file, 'rt') as csv_file_opened:
+                    # Read all lines from the file
+
+
+                    value  = read_and_extract_time_series_ev_info(
+                        file=csv_file_opened,
+                        start=start,
+                        period=period,
+                        max_charging_rate_within_interval=max_charging_rate_within_interval)
+
+                    valid, extracted_ev_info_reseted,extracted_ev_info_not_reseted  = value[0], value[1], value[2]
+
+
+                    if valid is False:
                         continue
 
-                    if not is_gzipped(subdirectory_path/file_name):
-                        continue
+                    start_of_day, arrival_time, arrival_timestamp_reseted, departure_time, departure_timestamp_reseted, max_charging_rate, energy_requested = extracted_ev_info_reseted
+                    _, _, arrival_timestamp, _, departure_timestamp, _, _ = extracted_ev_info_not_reseted
 
-                    with gzip.open(subdirectory_path/file_name, 'rt') as file:
-                        # Read all lines from the file
+                    ev_reseted = [arrival_timestamp_reseted,
+                          departure_timestamp_reseted,
+                          max_charging_rate,
+                          energy_requested]
+                    ev_not_reseted = [arrival_timestamp_reseted,
+                          departure_timestamp_reseted,
+                          max_charging_rate,
+                          energy_requested]
 
-                        valid, extracted_ev_info = read_and_extract_time_series_ev_info(
-                            file=file,
-                            start=start,
-                            period=period,
-                            reset_timestamp_after_each_day=reset_timestamp_after_each_day,
-                            max_charging_rate_within_interval=max_charging_rate_within_interval)
+                    ev_time_not_normalised = [arrival_time,
+                                              departure_time,
+                                              max_charging_rate,
+                                              energy_requested]
 
-                        if valid is False:
-                            continue
+                    if date_to_evs_diction_timestamp_reseted.get(start_of_day) is None:
+                        date_to_evs_diction_timestamp_reseted[start_of_day] = []
+                        date_to_evs_diction_time_not_normalised[start_of_day] = []
+                        date_to_evs_diction_timestamp_not_reseted[start_of_day] = []
+                    else:
+                        date_to_evs_diction_timestamp_reseted[start_of_day].append(ev_reseted)
+                        date_to_evs_diction_time_not_normalised[start_of_day].append(ev_time_not_normalised)
+                        date_to_evs_diction_timestamp_not_reseted[start_of_day].append(ev_not_reseted)
 
-                        start_of_day, arrival_time, arrival_timestamp, departure_time, departure_timestamp, max_charging_rate, energy_requested = extracted_ev_info
-
-                        ev = [arrival_timestamp,
-                              departure_timestamp,
-                              max_charging_rate,
-                              energy_requested]
-
-                        ev_time_not_normalised = [arrival_time,
-                                                  departure_time,
-                                                  max_charging_rate,
-                                                  energy_requested]
-
-                        if date_to_evs_diction.get(start_of_day) is None:
-                            date_to_evs_diction[start_of_day] = []
-                            date_to_evs_diction_time_not_normalised[start_of_day] = []
-                        else:
-                            date_to_evs_diction[start_of_day].append(ev)
-                            date_to_evs_diction_time_not_normalised[start_of_day].append(ev_time_not_normalised)
-
-
-            else:
-                # print(f"Subdirectory '{subdirectory}' does not exist.")
-                return ValueError(f"Subdirectory '{subdirectory}' does not exist.")
-        res_diction, res_diction_time_not_normalised = filter_evs(
-            date_to_evs_diction=date_to_evs_diction,
+        else:
+            # print(f"Subdirectory '{subdirectory}' does not exist.")
+            return ValueError(f"Subdirectory '{path_to_files}' does not exist.")
+        res_diction_timestamp_reseted, res_diction_timestamp_not_reseted, res_diction_time_not_normalised = filter_evs(
+            date_to_evs_diction_timestamp_reseted=date_to_evs_diction_timestamp_reseted,
+            date_to_evs_diction_timestamp_not_reseted=date_to_evs_diction_timestamp_not_reseted,
             date_to_evs_diction_time_not_normalised=date_to_evs_diction_time_not_normalised,
-            amount_of_evs_interval=amount_of_evs_interval,
-            include_days_with_less_than_30_charging_sessions=include_days_with_less_than_30_charging_sessions)
+            number_of_evs_interval=number_of_evs_interval)
 
-        return res_diction, res_diction_time_not_normalised
+        return res_diction_timestamp_reseted, res_diction_timestamp_not_reseted, res_diction_time_not_normalised
+
+# seems the costs are cumulative but i dont understand why they have such value
+def mpe_cost_graph(mpe_values,cost_values):
+    x_values = range(len(mpe_values))
+
+    # Plotting the MSE values
+    plt.figure(figsize=(10, 5))
+    plt.plot(mpe_values, cost_values, marker='o', linestyle='-', color='b')
+
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('MPE')
+    # find slovak translation of MSE
+    plt.ylabel('Cena')
+    # plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.grid()
+    plt.legend()
+
+    plt.ylim(bottom=0)
+    plt.xlim(left=0, right=1)
+
+    # Show the plot
+    plt.show()
+
+def get_ut_signals_from_schedule(schedule:np.array):
+    cols = schedule.shape[1]
+    uts = []
+    for i in range(cols):
+        uts.append(math.fsum(schedule[:, i]))
+    return uts
+
+def plot_arrivals_for_given_day(evs, day, period):
+    x_values = np.arange(0, 24, period / 60)
+    timesteps_during_the_day = int((24*60)/period)
+    y_weights = [0 for i in range(timesteps_during_the_day)]
+    for i in range(len(evs)):
+        index, arrival_timestamp, departure_timestamp, maximum_charging_rate, energy_requested = evs[i]
+        y_weights[arrival_timestamp] += 1
+
+    # Plotting the MSE values
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_values, y_weights, marker='o', linestyle='-', color='b')
+
+    # Adding labels and title
+    plt.title(f'Príchody elektromobilov pre deň {day}')
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Hodiny')
+    # find slovak translation of MSE
+    plt.ylabel('Počet príchodov elektromobilov')
+    # plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.xticks(np.arange(0, 25, 1))
+    plt.grid()
+    plt.legend()
+
+    plt.ylim(bottom=0)
+    plt.xlim(left=0, right=24)
+    # Show the plot
+    plt.show()
+
+def plot_departures_for_given_day(evs, day, period):
+    x_values = np.arange(0, 24, period / 60)
+    timesteps_during_the_day = int((24 * 60) / period)
+    y_weights = [0 for i in range(timesteps_during_the_day)]
+    for i in range(len(evs)):
+        index, arrival_timestamp, departure_timestamp, maximum_charging_rate, energy_requested = evs[i]
+        if departure_timestamp >= len(y_weights):
+            continue
+        y_weights[departure_timestamp] += 1
+    # Plotting the MSE values
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_values, y_weights, marker='o', linestyle='-', color='b')
+
+    plt.title(f'Odchody elektromobilov pre deň {day}')
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Hodiny')
+    # find slovak translation of MSE
+    plt.ylabel('Počet odchodov elektromobilov')
+    # plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.xticks(np.arange(0, 25, 1))
+    plt.grid()
+    plt.legend()
+
+    plt.ylim(bottom=0)
+    plt.xlim(left=0, right=24)
+    # Show the plot
+    plt.show()
+
+def comparison_pilot_signal_real_signal_graph(ut_signals,
+                                              cumulative_charging_rates,
+                                              period):
+    x_values = np.arange(0, 24, period/60)
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_values, ut_signals, marker='o', linestyle='-', color='b')
+    plt.plot(x_values, ut_signals, marker='o', linestyle='-', color='r')
+
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Hodiny')
+    # find slovak translation of MSE
+    plt.ylabel('Sila (kW)')
+    # plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.xticks(np.arange(0, 25, 1))
+    plt.grid()
+    plt.legend(['dodaná energia', 'nedodaná energia'], fontsize='medium')
+
+    plt.ylim(bottom=0)
+    plt.xlim(left=0, right=24)
+    # Show the plot
+    plt.show()
+
+# seems the costs are cumulative but i dont understand why they have such value
+def charging_in_time_graph(ut_signals_offline,
+                           period,
+                           ut_signals_ppc=None,
+                           ut_signals_mpc = None):
+    # x_values = range(len(ut_signals_offline))
+    x_values = np.arange(0, 24, period/60)
+    # Plotting the MSE values
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_values, ut_signals_offline, marker='o', linestyle='-', color='b')
+
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Hodiny')
+    # find slovak translation of MSE
+    plt.ylabel('Sila (kW)')
+    # plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.xticks(np.arange(0, 25, 1))
+    plt.grid()
+    plt.legend()
+
+    plt.ylim(bottom=0)
+    plt.xlim(left=0, right=24)
+    # Show the plot
+    plt.show()
+
+def plot_costs(costs,period,ticks_after_hours=1):
+    x_values = np.arange(0, 24, period / 60)
+    # Plotting the MSE values
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_values, costs, marker='o', linestyle='-', color='b')
+
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Hodiny')
+    # find slovak translation of MSE
+    plt.ylabel('Cena za 1kW')
+
+    plt.xticks(np.arange(0, 25, 1))
+
+    # plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.grid()
+    plt.legend()
+    plt.ylim(bottom=0)
+    plt.xlim(left=0, right=24)
+    # Show the plot
+    plt.show()
 
 
+def calculate_cumulative_costs(schedule:np.array,cost_vector):
+    res = 0
+    cols = schedule.shape[1]
+    for i in range(cols):
+        res += math.fsum(cost_vector[i] * schedule[:, i])
+    return res
+
+def calculate_cumulative_costs_given_ut(uts:np.array,cost_vector):
+    res = 0
+    for i, ut in enumerate(uts, start=0):
+        res += uts * cost_vector[i]
+    return res
 
 
-def datetime_to_timestamp(start, chosen_date, period, round_up=False):
+def costs_per_day_graph(costs):
+    x_values = range(len(costs))
 
-    ts = (chosen_date - start) / timedelta(minutes=period)
-    if round_up:
-        return int(math.ceil(ts))
-    else:
-        return int(ts)
+    # Plotting the MSE values
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_values, costs, marker='o', linestyle='-', color='b')
+
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Dni')
+    # find slovak translation of MSE
+    plt.ylabel('Kumulatívna cena energie')
+    plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.grid()
+    plt.legend()
+
+    plt.ylim(bottom=0)
+    # Show the plot
+    plt.show()
+def mpe_per_day_graph(mpe_values):
+    # Create an array of indices (x values)
+    x_values = range(len(mpe_values))
+
+    # Plotting the MSE values
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_values, mpe_values, marker='o', linestyle='-', color='b')
+
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Dni')
+    # find slovak translation of MSE
+    plt.ylabel('MPE')
+    plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.grid()
+    plt.legend()
+
+    # Set y-axis limits from 0 to 1
+    plt.ylim(0, 1)
+
+    # Show the plot
+    plt.show()
+def mse_per_day_graph(mse_values):
+    # Create an array of indices (x values)
+    x_values = range(len(mse_values))
+
+    # Plotting the MSE values
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_values, mse_values, marker='o', linestyle='-', color='b', label='MSE Values')
+
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Dni')
+    # find slovak translation of MSE
+    plt.ylabel('MSE')
+    plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.grid()
+    plt.legend()
+
+    # Set y-axis limits from 0 to 1
+    plt.ylim(0, 1)
+    # Show the plot
+    plt.show()
+# draws barchart for one day
+def draw_barchart_sessions_from_RL(dict_of_evs,
+                                   tick_after_bars=10):
+    energies_requested = []
+    energies_undelivered = []
+    for key, value in dict_of_evs.items():
+        index, energy_requested, energy_undelivered = value
+        energy_requested.append(energy_requested)
+        energy_undelivered.append(energy_undelivered)
+    plt.bar([i for i in range(len(energies_requested))], energies_requested, color='lightblue', edgecolor='lightblue')
+    plt.bar([i for i in range(len(energies_requested))], energies_undelivered, color='black', edgecolor='black')
+    # Add titles and labels
+    # plt.title('Sample Bar Chart', fontsize=16)
+    plt.xlabel('Nabíjanie elektromobily', fontsize=12)
+    plt.ylabel('Energia (kW)', fontsize=12)
+
+    # Add gridlines
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+    num_bars = len(energies_requested)
+    tick_positions = list(range(0, num_bars, tick_after_bars))  # Positions for labels (19, 39, 59, ...)
+    custom_labels = [f'{tick_after_bars * i}' for i in range(len(tick_positions))]
+
+    # Set ticks and labels
+    plt.xticks(ticks=tick_positions, labels=custom_labels)
+
+    # Add a legend with comments only
+    plt.legend(['dodaná energia', 'nedodaná energia'], fontsize='medium')
+    # Show the plot
+    plt.show()
+
+
+# assume that evs is dict (it can change) possibly not because we plot for specific day so key is important
+def draw_barchart_sessions(schedule:np.array, evs_dict_reseted,
+                           tick_after_bars=10):
+    # Data
+    energies_requested_for_each_day = {}
+    energies_undelivered_for_each_day = {}
+    for key, value in evs_dict_reseted.items():
+        energies_requested_for_each_day[key] = []
+        energies_undelivered_for_each_day[key] = []
+        for ev in value:
+            ev_index, arrival_timestamp_reseted, departure_timestamp_reseted, max_charging_rate, energy_requested = ev
+            energies_requested_for_each_day[key].append(energy_requested)
+            try:
+                energy_undelivered = energy_requested - math.fsum(schedule[ev_index,:])
+                energies_undelivered_for_each_day[key].append(max(energy_undelivered, 0))
+            except IndexError:
+                energies_undelivered_for_each_day[key].append(max(energy_requested - 0, 0))
+
+
+    # Create a bar chart
+    for key, value in energies_requested_for_each_day.items():
+        energies_requested = value
+        energies_undelivered = energies_undelivered_for_each_day[key]
+        plt.bar([i for i in range(len(energies_requested))], energies_requested, color='lightblue', edgecolor='lightblue')
+        plt.bar([i for i in range(len(energies_requested))], energies_undelivered, color='black', edgecolor='black')
+
+        # Add titles and labels
+        # plt.title('Sample Bar Chart', fontsize=16)
+        plt.xlabel('Nabíjanie elektromobily', fontsize=12)
+        plt.ylabel('Energia (kW)', fontsize=12)
+
+        # Add gridlines
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+        num_bars = len(energies_requested)
+        tick_positions = list(range(0, num_bars, tick_after_bars))  # Positions for labels (19, 39, 59, ...)
+        custom_labels = [f'{tick_after_bars*i}' for i in range(len(tick_positions))]
+
+        # Set ticks and labels
+        plt.xticks(ticks=tick_positions, labels=custom_labels)
+
+        # Add a legend with comments only
+        plt.legend(['dodaná energia', 'nedodaná energia'], fontsize='medium')
+        # Show the plot
+        plt.show()
+
+
 # this type of input data is not used in RL algorithm, because of the lack of data of this type
 def load_json_ev_data(document,
                       start:datetime,
@@ -286,14 +649,13 @@ def load_json_ev_data(document,
     data = json.load(f)
     evs = []
     evs_time_not_normalised = []
-
     if amount_of_evs_interval is None:
         num_of_evs = np.inf
     else:
         num_of_evs = random.randint(
             amount_of_evs_interval[0],
             amount_of_evs_interval[1])
-
+    ev_index = 0
     for ev_dict in data["_items"]:
         arrival_datetime = datetime.strptime(
             ev_dict["connectionTime"],
@@ -325,16 +687,22 @@ def load_json_ev_data(document,
                 maximum_charging_rate = random.uniform(
                     max_charging_rate_within_interval[0],
                     max_charging_rate_within_interval[1])
-            evs.append([arrival_timestamp,
+            add_index = []
+            if amount_of_evs_interval is None:
+                add_index = [ev_index]
+            evs.append(add_index + [arrival_timestamp,
                         departure_timestamp,
                         maximum_charging_rate,
                         energy_requested])
 
             evs_time_not_normalised.append(
-                [arrival_datetime,
+                add_index + [arrival_datetime,
                  departure_datetime,
                  maximum_charging_rate,
                  energy_requested])
+            if amount_of_evs_interval is None:
+                ev_index += 1
+
 
     return num_of_evs, evs, evs_time_not_normalised
 
@@ -372,13 +740,14 @@ def random_choice_evs(evs:list,
     chosen_idxs = []
     randomly_chosen_evs = []
     randomly_chosen_evs_not_normalised_time = []
+    ev_index = 0
     while len(randomly_chosen_evs) < num_of_evs:
         index = random.randint(0, len(evs) - 1)
         if index not in chosen_idxs:
             chosen_idxs.append(index)
-            randomly_chosen_evs.append(evs[index])
-            randomly_chosen_evs_not_normalised_time.append(evs_time_not_normalised[index])
-
+            randomly_chosen_evs.append([ev_index] + evs[index])
+            randomly_chosen_evs_not_normalised_time.append([ev_index] + evs_time_not_normalised[index])
+            ev_index += 1
     return randomly_chosen_evs, randomly_chosen_evs_not_normalised_time
 
 
@@ -507,8 +876,8 @@ def save_evs_to_file(filename, evs, evs_with_time_not_normalised, timestamped_ti
         f.write('format i.auto: a_i, d_i, r_i, e_i\n')
         # f.write('format i.auto: a_i, d_i, r_i\n')
         for i, ev in enumerate(all_evs, start=1):
-            arrival, departure, maximum_charging_rate, requested_energy = ev
-            arrival_not_normalised, departure_not_normalised, maximum_charging_rate, requested_energy = all_evs_time_not_normalised[i - 1]
+            index, arrival, departure, maximum_charging_rate, requested_energy = ev
+            index, arrival_not_normalised, departure_not_normalised, maximum_charging_rate, requested_energy = all_evs_time_not_normalised[i - 1]
             if timestamped_time is False:
                 arrival_not_normalised_minutes_str = str(
                     arrival_not_normalised.minute)
@@ -593,8 +962,8 @@ def create_settings_file(filename,
                          number_of_evse:int,
                          period:int,
                          algorithm_name:str,
-                         charging_network:list,
-                         garages:list,
+                         charging_networks_chosen:list,
+                         garages_chosen:list,
                          cost_function:str='t',
                          solver_name:str='ECOS'):
     with open(filename, 'w') as f:
@@ -604,8 +973,8 @@ def create_settings_file(filename,
         f.write(f'Dlzka casoveho horizontu T = {len(time_horizon)}\n')
         f.write(f'Cenova funkcia: c_nt = {cost_function}\n')
         f.write(f'Pocet nabijaciek = {number_of_evse}\n')
-        charging_networks_str = ', '.join(charging_networks)
-        garages_str = ', '.join(garages)
+        charging_networks_str = ', '.join(charging_networks_chosen)
+        garages_str = ', '.join(garages_chosen)
         f.write(f'Data o autach sme ziskali z nabijacich stanic {charging_networks_str} a z ich garazi {garages_str}\n')
         # f.write(f'')
         f.write(f'P(t) = {available_energy_for_each_timestep}\n')
@@ -615,6 +984,43 @@ def create_settings_file(filename,
             ...
         else:
             f.write(f'Pouzity LP solver = {solver_name}')
+
+def mpe_for_more_days(schedule_for_each_day, evs_for_each_day):
+    overall_energy_delivered = 0
+    overall_energy_requested = 0
+
+    for day, ev in enumerate(evs_for_each_day, start=0):
+        index, arrival_time, departure_time, maximum_charging_rate, requested_energy = ev
+        overall_energy_requested += requested_energy
+        # overall_energy_delivered += math.fsum(schedule[index,:])
+    return overall_energy_delivered / overall_energy_requested
+
+
+def mse_error_fun_rl_testing(sum_of_charging_rates, ut_signals, capacity_constraint):
+    res_mse_error = 0
+    for col in range(len(sum_of_charging_rates)):
+        res_mse_error += abs(sum_of_charging_rates - ut_signals[col])**2
+    return res_mse_error / capacity_constraint
+def mpe_error_fun_rl_testing(ev_diction):
+    overall_energy_delivered = 0
+    overall_energy_requested = 0
+    for ev, ev_values in ev_diction.items():
+        requested_energy, undelivered_energy = ev_values
+        delivered_energy = requested_energy - undelivered_energy
+        overall_energy_requested += requested_energy
+        overall_energy_delivered += delivered_energy
+    return 1 - (overall_energy_delivered / overall_energy_requested)
+
+def mpe_error_fun(schedule, evs):
+    if len(evs) == 0:
+        return 1
+    overall_energy_delivered = 0
+    overall_energy_requested = 0
+    for ev in evs:
+        index, arrival_time, departure_time, maximum_charging_rate, requested_energy = ev
+        overall_energy_requested += requested_energy
+        overall_energy_delivered += math.fsum(schedule[index,:])
+    return 1 - (overall_energy_delivered / overall_energy_requested)
 def write_results_into_file(filename, charging_rates, price_vector):
     with open(filename, 'w') as f:
         f.write(...)
@@ -623,3 +1029,177 @@ def find_number_of_decimal_places(number):
     str_num = str(number)
     split_int, split_decimal = str_num.split('.')
     return len(split_decimal)
+# day ahead market for one day
+def load_locational_marginal_prices(filename,organization, period):
+    if not filename.endswith('.csv'):
+        raise ValueError('Filename must end with .csv')
+    num_of_steps = int(60/period)
+    hours = []
+    prices = np.zeros(shape=(int((24*60)/period)))
+    # Load and iterate over the CSV file
+    with open(f'{filename}', mode='r') as file:
+        csv_reader = csv.reader(file)
+
+        # Skip the header if there is one
+        header = next(csv_reader)
+        i = 0
+        average = 0
+        num = 0
+        for index, row in enumerate(csv_reader):
+            # row is list of strings created by separting by commas
+            date, price, given_organisation = row
+            price = float(price)
+            if given_organisation == organization:
+                prices[i*num_of_steps:(i+1)*num_of_steps] = price
+                i += 1
+            elif organization is None:
+                if len(hours) > 0 and date == hours[-1]:
+                    num += 1
+                    average += price
+                    continue
+                if len(hours) > 0 and date != hours[-1]:
+                    average /= num
+                    prices[i * num_of_steps:(i + 1) * num_of_steps] = average
+                    i += 1
+                    num = 1
+                    average = price
+                    hours.append(date)
+                    continue
+
+                hours.append(date)
+                average += price
+                num += 1
+        if organization is None:
+            average /= num
+            prices[i * num_of_steps:(i + 1) * num_of_steps] = average
+            hours.append(date)
+
+        return prices
+
+def default_settings_json_file():
+    # learning starts parameter we can possibly change
+    # action space shouldnt be a problem looking at relu activation function
+    json_file = {
+        'optimizer':'Adam',
+        # learning rate matches with sb3
+        'learning rate': 3e-4,
+        # replay buffer size matches with sb3
+        'replay buffer size': 10^6,
+        'number of hidden layers (all networks)':2,
+        'number of hidden units per layer': 256,
+
+        'number of samples per minibatch': 256,
+        'Non-linearity':'ReLU',
+        # this parameter gamma is different in sb3 - need to change it for sb3
+        'discount factor': 0.5,
+        # target smoothing coefficient matches with sb3
+        'target smoothing coefficient':5e-3,
+        # gradient step matches with sb3
+        'gradient steps': 1,
+        # target update interval matches with sb3
+        'target update interval':1,
+
+        # add more info if RL environment does more things like smoothing
+        'number of evse': 54,
+        'number of power levels': 10,
+        'tuning parameter': 6e3,
+        'number of episodes': 500,
+        'scheduling algorithm':'LLF',
+        # entrophy coeff - we set it to learn automatically, but we can try 0.5 but then reward scaling issues can occur
+        'temperature parameter': 0.5,
+        'Power rating':150,
+        'Reward':'H(pt) + o1*sum_{i in active evs}||s_t(i)||_2'
+                 '- o2* sum_{i in active evs} I(t = d(i))[e_{t}(j)]'
+                 '- o3* |sum(s_{t}) - PPC(pt,ct)|',
+        'Maximum charging rate for each EV':6.6,
+        'time interval':12,
+        'o1':0.1,
+        'o2':0.2,
+        'o3':2}
+    return json_file
+
+def save_hyperparam_into_file(filename,input_diction):
+    default_dict = default_settings_json_file()
+    for key, value in input_diction.items():
+        if key in default_dict:
+            default_dict[key] = value
+    save_to_json(default_dict,filename)
+
+def save_to_json(data, filename):
+    with open(filename, 'w') as json_file:
+        json.dump(data, json_file, indent=4)
+
+def set_list(value, num_evs):
+    res_list = []
+    if isinstance(value, list):
+        if len(value) == num_evs:
+            raise ValueError('Bad number of arrival times')
+        res_list = copy.deepcopy(value)
+    elif isinstance(value, int) or isinstance(value, float):
+        res_list = [value for _ in range(num_evs)]
+    else:
+        raise ValueError('Bad type of arrival timestamps')
+    return res_list
+#         for one day for testing
+def create_dataset(arrival_timestamps,
+                   departure_timestamps,
+                   maximum_charging_rates,
+                   requested_energies,
+                   num_evs):
+    res_arrival_timestamps = set_list(value=arrival_timestamps,num_evs=num_evs)
+    res_departure_timestamps = set_list(value=departure_timestamps,num_evs=num_evs)
+    res_maximum_charging_rates = set_list(value=maximum_charging_rates,num_evs=num_evs)
+    res_requested_energies = set_list(value=requested_energies,num_evs=num_evs)
+
+    evs = []
+    for i in range(num_evs):
+        arrival_timestamp = res_arrival_timestamps[i]
+        departure_timestamp = res_departure_timestamps[i]
+        maximum_charging_rate = res_maximum_charging_rates[i]
+        requested_energy = res_requested_energies[i]
+        ev = [i, arrival_timestamp, departure_timestamp, maximum_charging_rate,requested_energy]
+        evs.append(ev)
+    return evs
+
+def convert_timestep_to_hours(timestep, time_between_timesteps):
+    return (timestep*time_between_timesteps) / 60
+
+
+
+class FigureRecorderCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+
+    def _on_step(self):
+        # Plot values (here a random variable)
+        figure = plt.figure()
+        figure.add_subplot().plot(np.random.random(3))
+        # Close the figure after logging it
+        self.logger.record("trajectory/figure", Figure(figure, close=True), exclude=("stdout", "log", "json", "csv"))
+        plt.close()
+        return True
+
+def dummy_expert(env,_obs):
+    """
+    Random agent. It samples actions randomly
+    from the action space of the environment.
+
+    :param _obs: (np.ndarray) Current observation
+    :return: (np.ndarray) action taken by the expert
+    """
+    return env.action_space.sample()
+
+
+class TensorboardCallback(BaseCallback):
+    """
+    Custom callback for plotting additional values in tensorboard.
+    """
+
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+
+    def _on_step(self) -> bool:
+        # Log scalar value (here a random variable)
+        value = np.random.random()
+        self.logger.record("random_value", value)
+        return True

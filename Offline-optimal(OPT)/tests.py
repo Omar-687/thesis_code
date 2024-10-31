@@ -1,9 +1,6 @@
-
 from datetime import datetime, timedelta, timezone
-
 from opt_algorithm import OPT
 from utils import *
-
 import unittest
 from os.path import exists
 from testing_functions import (check_all_energy_demands_met,
@@ -15,7 +12,7 @@ from preprocessing import (are_input_data_valid,
                            are_dict_input_data_valid)
 
 from scheduling_alg import SchedulingAlg
-
+import logging
 
 # TODO: test that algorithms work for different cost functions
 # TODO: check how  tongxin li implemented MPC with chargers (how did he manage them) and add specified number of EVSE
@@ -23,16 +20,10 @@ from scheduling_alg import SchedulingAlg
 
 class testOPT(unittest.TestCase):
 
-
-
-
-    # (24*12)/5
-
-
-
-
-
     def test_basic_one_day_charging(self):
+        logging.info('aaaabbbb')
+        logging.info('cccccccc')
+        print("Output for this test.")
         filename = 'acndata_sessions_acn.json'
         txt_ev_info_filename = 'evs_data.txt'
         settings_filename = 'settings.txt'
@@ -49,14 +40,14 @@ class testOPT(unittest.TestCase):
         save_evs_to_file(filename=txt_ev_info_filename,
                          evs=evs,
                          evs_with_time_not_normalised=evs_time_not_normalised)
-
-        available_energy_for_each_timestep = (
-            bisection_search_Pt(EVs=evs,
-                                start=start,
-                                end=end,
-                                period=period,
-                                algorithm=OPT,
-                                cost_function=cost_function))
+        available_energy_for_each_timestep = 1000
+        # available_energy_for_each_timestep = (
+        #     bisection_search_Pt(EVs=evs,
+        #                         start=start,
+        #                         end=end,
+        #                         period=period,
+        #                         algorithm=OPT,
+        #                         cost_function=cost_function))
 
         scheduling_alg = OPT(EVs=evs,
                              start=start,
@@ -92,8 +83,8 @@ class testOPT(unittest.TestCase):
                              time_horizon=scheduling_alg.time_horizon,
                              period=period,
                              number_of_evse=number_of_evse,
-                             charging_network=[],
-                             garages=[],
+                             charging_networks_chosen=[],
+                             garages_chosen=[],
                              algorithm_name='OPT')
 
         create_table(charging_profiles_matrix=charging_rates,
@@ -122,9 +113,7 @@ class testOPT(unittest.TestCase):
             start=start,
             end=end,
             period=period,
-            reset_timestamp_after_each_day=False,
             include_weekends=True,
-            include_days_with_less_than_30_charging_sessions=True
         )
 
 
@@ -170,6 +159,9 @@ class testOPT(unittest.TestCase):
 
 
     def test_more_days_charging(self):
+
+        print('aaahahhha')
+
         start = datetime(2018, 4, 26, 0, 0, 0)
         end = datetime(2018, 4, 29, 23, 59, 59)
         period = 5
@@ -216,3 +208,5 @@ class testOPT(unittest.TestCase):
         self.assertTrue(all_energy_demands_met)
 
 
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

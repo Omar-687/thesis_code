@@ -15,7 +15,10 @@ class LeastLaxityFirstAlg(SchedulingAlg):
                  number_of_evse=54,
                  cost_function=None,
                  process_output=True,
-                 costs_loaded_manually=None
+                 costs_loaded_manually=None,
+                 info_about_future_costs=True,
+                 set_available_energy_for_each_timestep=True,
+                 set_time_horizon=True
                  ):
         super().__init__(EVs=EVs,
                          start=start,
@@ -26,12 +29,31 @@ class LeastLaxityFirstAlg(SchedulingAlg):
                          number_of_evse=number_of_evse,
                          cost_function=cost_function,
                          process_output=process_output,
-                         costs_loaded_manually=costs_loaded_manually)
+                         costs_loaded_manually=costs_loaded_manually,
+                         info_about_future_costs=info_about_future_costs,
+                         set_available_energy_for_each_timestep=set_available_energy_for_each_timestep,
+                         set_time_horizon=set_time_horizon)
         self.algorithm_name = 'LLF'
 
 
     # we calculate this by using bisection
     # optimisation variable is charging rate
+
+    def find_maximum_feasible_charging_rate_given_observation(self, ev,
+                                            remaining_available_energy_at_given_timestep
+                                            ):
+        ev_maximum_charging_rate, ev_remaining_energy_to_be_charged = ev
+        minimum_value = 0
+        maximum_value = min(ev_maximum_charging_rate,
+                            ev_remaining_energy_to_be_charged)
+        while abs(maximum_value - minimum_value) > self.accuracy:
+            maximum_feasible_charging_rate_of_ev = (maximum_value + minimum_value) / 2
+            if maximum_feasible_charging_rate_of_ev > remaining_available_energy_at_given_timestep:
+                maximum_value = maximum_feasible_charging_rate_of_ev
+            else:
+                minimum_value = maximum_feasible_charging_rate_of_ev
+
+        return minimum_value
     # validate if this is ok once again with other articles about bisection
     def find_maximum_feasible_charging_rate(self, ev,
                                             remaining_available_energy_at_given_timestep,
@@ -40,7 +62,8 @@ class LeastLaxityFirstAlg(SchedulingAlg):
                                             ):
         index, ev_arrival, ev_departure, ev_maximum_charging_rate, ev_requested_energy = ev
         minimum_value = 0
-        maximum_value = min(ev_maximum_charging_rate,ev_remaining_energy_to_be_charged)
+        maximum_value = min(ev_maximum_charging_rate,
+                            ev_remaining_energy_to_be_charged)
         while abs(maximum_value - minimum_value) > self.accuracy:
             maximum_feasible_charging_rate_of_ev = (maximum_value + minimum_value) / 2
             if maximum_feasible_charging_rate_of_ev > remaining_available_energy_at_given_timestep[timestep]:
@@ -49,6 +72,44 @@ class LeastLaxityFirstAlg(SchedulingAlg):
                 minimum_value = maximum_feasible_charging_rate_of_ev
 
         return minimum_value
+    def get_indices_of_evs_from_smallest_to_biggest_laxity_given_observation(self,
+                                                                             observation,
+                                                                             maximum_charging_rate,
+                                                                             number_of_evse=54):
+        ev_to_laxities = []
+        for ev_index in range(0, number_of_evse):
+            ev_observation_index = ev_index * 2
+            ev_remaining_charging_time = observation[ev_observation_index]
+            if ev_remaining_charging_time == 0:
+                continue
+            ev_remaining_requested_energy = observation[ev_observation_index + 1]
+            laxity_of_ev = ev_remaining_charging_time - (ev_remaining_requested_energy / maximum_charging_rate)
+            ev_to_laxities.append([ev_index, laxity_of_ev])
+        return ev_to_laxities
+
+    def solve_for_current_timestep_given_observation(
+            self,
+            observation,
+            maximum_charging_rate,
+            number_of_evse,
+            available_energy):
+        ev_to_laxities = self.get_indices_of_evs_from_smallest_to_biggest_laxity_given_observation(observation=observation,
+                                                                                           maximum_charging_rate=maximum_charging_rate)
+        ev_to_laxities.sort(key=lambda x: x[1])
+        schedule = [0 for i in range(number_of_evse)]
+        for ev_info in ev_to_laxities:
+            if available_energy <= 0:
+                break
+            ev_index, laxity_of_ev = ev_info
+            map_to_obs = 2*ev_index
+            ev = [maximum_charging_rate, observation[map_to_obs]]
+            maximum_feasible_charging_rate = self.find_maximum_feasible_charging_rate_given_observation(ev=ev,
+                                                                                                        remaining_available_energy_at_given_timestep=available_energy
+                                                                                                        )
+            available_energy -= maximum_feasible_charging_rate
+            schedule[ev_index] = maximum_feasible_charging_rate
+        return schedule
+
 
 
     def solve_for_one_timestep(
@@ -58,7 +119,6 @@ class LeastLaxityFirstAlg(SchedulingAlg):
 
         active_evs = self.get_active_evs_connected_to_evses(
             evs=self.EVs_indexed,
-            evs_remaining_energy_to_be_charged=evs_remaining_energy_to_be_charged,
             timestep=current_timestep,
             number_of_evse=self.number_of_evse)
 
@@ -98,7 +158,6 @@ class LeastLaxityFirstAlg(SchedulingAlg):
         for current_timestep in self.time_horizon:
             active_evs = self.get_active_evs_connected_to_evses(
                 evs=self.EVs_indexed,
-                evs_remaining_energy_to_be_charged=evs_remaining_energy_to_be_charged,
                 timestep=current_timestep,
                 number_of_evse=self.number_of_evse)
 

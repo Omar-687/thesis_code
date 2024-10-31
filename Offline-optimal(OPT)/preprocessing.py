@@ -1,6 +1,4 @@
 from datetime import datetime
-
-
 # we use index before each EV in these functions
 # EV i is active when current_timestep is in interval [a_i, d_i]
 def get_active_evs(evs, current_timestep):
