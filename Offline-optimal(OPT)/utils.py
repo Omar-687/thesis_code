@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import pandas as pd
 import numpy as np
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 from stable_baselines3.common.logger import Figure
 from cvxpy import SolverError
@@ -47,6 +48,7 @@ def check_time_series_file_correctness(file_name,
                                        end:datetime,
                                        include_weekends=False,
                                        ):
+    # all times are converted to Los Angeles local timezone
     # only files with this format are accepted, and the further checking of gzipped files is elsewhere
     if not file_name.endswith('.csv.gz'):
         return False
@@ -56,12 +58,14 @@ def check_time_series_file_correctness(file_name,
     la_lt = pytz.timezone('America/Los_Angeles')
     year, month, day, hour, minute, second = file_date_arr
     # utc is default timezone
+    # name of file contains the info about arrivals in utc timezone
     file_date = datetime(int(year),
                          int(month),
                          int(day),
                          int(hour),
                          int(minute),
-                         int(second),tzinfo=timezone.utc)
+                         int(second),
+                         tzinfo=timezone.utc)
     file_date = file_date.astimezone(la_lt)
 
     if not check_date_within_interval(file_date=file_date,
@@ -85,7 +89,8 @@ def datetime_to_timestamp(start, chosen_date, period, round_up=False):
 def read_and_extract_time_series_ev_info(file,
                                          start,
                                          period,
-                                         max_charging_rate_within_interval=None):
+                                         max_charging_rate_within_interval=None,
+                                         include_overday_charging=True):
 
     lines = None
     try:
@@ -110,6 +115,8 @@ def read_and_extract_time_series_ev_info(file,
     #
     for i in range(len(lines)-1, 0, -1):
         state = lines[i].split(',')[4]
+        if i == len(lines)-1 and state != 'UNPLUGGED':
+            return False, None, None
         if state != 'UNPLUGGED':
             energy_delivered = lines[i].split(',')[5]
             if len(energy_delivered) == 0:
@@ -130,6 +137,10 @@ def read_and_extract_time_series_ev_info(file,
     arrival_timestamp_reseted = datetime_to_timestamp(start=start_of_day, chosen_date=arrival_time, period=period)
     departure_timestamp_reseted = datetime_to_timestamp(start=start_of_day, chosen_date=departure_time, period=period)
 
+    max_timestamp = int((24*60)/period) - 1
+
+    if include_overday_charging == False and arrival_time.date() != departure_time.date():
+        return False, None, None
     arrival_timestamp = datetime_to_timestamp(start=start, chosen_date=arrival_time,
                                               period=period)
     departure_timestamp = datetime_to_timestamp(start=start, chosen_date=departure_time,
@@ -170,6 +181,7 @@ def filter_evs(date_to_evs_diction_timestamp_reseted:dict,
     res_diction_time_not_normalised = {}
 
     index_of_ev = 0
+    # index_of_ev_reset_after_day = 0
     if number_of_evs_interval is not None:
         for key, value in date_to_evs_diction_timestamp_reseted.items():
             if number_of_evs_interval[0] <= len(value) < number_of_evs_interval[1]:
@@ -181,40 +193,15 @@ def filter_evs(date_to_evs_diction_timestamp_reseted:dict,
                 res_diction_timestamp_not_reseted[key] = []
                 res_diction_time_not_normalised[key] = []
 
-            for i, ev in enumerate(value,0):
-                res_diction_timestamp_reseted[key].append([index_of_ev] + ev)
-                res_diction_timestamp_not_reseted[key].append([index_of_ev] + date_to_evs_diction_timestamp_not_reseted[key][i])
-                res_diction_time_not_normalised[key].append([index_of_ev] + date_to_evs_diction_time_not_normalised[key][i])
+            for index_of_ev_reset_after_day, ev in enumerate(value, start=0):
+                res_diction_timestamp_reseted[key].append([index_of_ev_reset_after_day] + ev)
+                res_diction_timestamp_not_reseted[key].append([index_of_ev] + date_to_evs_diction_timestamp_not_reseted[key][index_of_ev_reset_after_day])
+                res_diction_time_not_normalised[key].append([index_of_ev] + date_to_evs_diction_time_not_normalised[key][index_of_ev_reset_after_day])
                 index_of_ev += 1
     else:
         res_diction_timestamp_reseted = deepcopy(date_to_evs_diction_timestamp_reseted)
         res_diction_timestamp_not_reseted = deepcopy(date_to_evs_diction_timestamp_not_reseted)
         res_diction_time_not_normalised = deepcopy(date_to_evs_diction_time_not_normalised)
-        # date_to_evs_diction.clear()
-        # date_to_evs_diction_time_not_normalised.clear()
-        # date_to_evs_diction = copy.deepcopy(res_diction)
-        # date_to_evs_diction_time_not_normalised = copy.deepcopy(res_diction_time_not_normalised)
-
-    # if amount_of_evs_interval is not None:
-    #     all_evs = []
-    #     all_evs_not_normalised = []
-    #     for key in date_to_evs_diction.keys():
-    #         for ev in date_to_evs_diction[key]:
-    #             all_evs.append([key, ev])
-    #         for ev in date_to_evs_diction_time_not_normalised[key]:
-    #             all_evs_not_normalised.append([key, ev])
-    #     num_of_evs = random.randint(amount_of_evs_interval[0],
-    #                                 amount_of_evs_interval[1])
-    #
-    #     res_diction.clear()
-    #     res_diction_time_not_normalised.clear()
-    #
-    #     res_diction, res_diction_time_not_normalised = random_choice_evs_dict(evs=all_evs,
-    #                                                                           evs_time_not_normalised=all_evs_not_normalised,
-    #                                                                           num_of_evs=num_of_evs)
-    # if res_diction == {}:
-    #     res_diction = copy.deepcopy(date_to_evs_diction)
-    #     res_diction_time_not_normalised = copy.deepcopy(date_to_evs_diction_time_not_normalised)
 
     return res_diction_timestamp_reseted, res_diction_timestamp_not_reseted, res_diction_time_not_normalised
 def convert_evs_diction_to_array(evs_diction):
@@ -232,6 +219,7 @@ def load_time_series_ev_data(charging_network:str,
                              number_of_evs_interval=None,
                              max_charging_rate_within_interval=None,
                              include_weekends=False,
+                             include_overday_charging=True,
                              dir_where_is_projected_cloned =fr'C:\Users\OMI\Documents\thesisdata'):
 
 
@@ -250,8 +238,6 @@ def load_time_series_ev_data(charging_network:str,
     date_to_evs_diction_time_not_normalised = {}
 
     # check_package_exists('ACNDataStatic')
-
-    base_path = r'C:\Users\OMI\Documents\thesisdata'
     for i in range(len(garages)):
         path_to_files = dir_where_is_projected_cloned + fr'\ACN-Data-Static\time series data\{charging_network}\{garages[i]}'
         package_dir = Path(path_to_files)
@@ -273,29 +259,27 @@ def load_time_series_ev_data(charging_network:str,
 
                 with gzip.open(csv_file, 'rt') as csv_file_opened:
                     # Read all lines from the file
-
-
                     value  = read_and_extract_time_series_ev_info(
                         file=csv_file_opened,
                         start=start,
                         period=period,
-                        max_charging_rate_within_interval=max_charging_rate_within_interval)
+                        max_charging_rate_within_interval=max_charging_rate_within_interval,
+                        include_overday_charging=include_overday_charging)
 
-                    valid, extracted_ev_info_reseted,extracted_ev_info_not_reseted  = value[0], value[1], value[2]
-
+                    valid, extracted_ev_info_reseted, extracted_ev_info_not_reseted  = value[0], value[1], value[2]
 
                     if valid is False:
                         continue
 
                     start_of_day, arrival_time, arrival_timestamp_reseted, departure_time, departure_timestamp_reseted, max_charging_rate, energy_requested = extracted_ev_info_reseted
-                    _, _, arrival_timestamp, _, departure_timestamp, _, _ = extracted_ev_info_not_reseted
+                    _, _, arrival_timestamp_not_reseted, _, departure_timestamp_not_reseted, _, _ = extracted_ev_info_not_reseted
 
                     ev_reseted = [arrival_timestamp_reseted,
                           departure_timestamp_reseted,
                           max_charging_rate,
                           energy_requested]
-                    ev_not_reseted = [arrival_timestamp_reseted,
-                          departure_timestamp_reseted,
+                    ev_not_reseted = [arrival_timestamp_not_reseted,
+                          departure_timestamp_not_reseted,
                           max_charging_rate,
                           energy_requested]
 
@@ -308,10 +292,10 @@ def load_time_series_ev_data(charging_network:str,
                         date_to_evs_diction_timestamp_reseted[start_of_day] = []
                         date_to_evs_diction_time_not_normalised[start_of_day] = []
                         date_to_evs_diction_timestamp_not_reseted[start_of_day] = []
-                    else:
-                        date_to_evs_diction_timestamp_reseted[start_of_day].append(ev_reseted)
-                        date_to_evs_diction_time_not_normalised[start_of_day].append(ev_time_not_normalised)
-                        date_to_evs_diction_timestamp_not_reseted[start_of_day].append(ev_not_reseted)
+
+                    date_to_evs_diction_timestamp_reseted[start_of_day].append(ev_reseted)
+                    date_to_evs_diction_time_not_normalised[start_of_day].append(ev_time_not_normalised)
+                    date_to_evs_diction_timestamp_not_reseted[start_of_day].append(ev_not_reseted)
 
         else:
             # print(f"Subdirectory '{subdirectory}' does not exist.")
@@ -325,17 +309,37 @@ def load_time_series_ev_data(charging_network:str,
         return res_diction_timestamp_reseted, res_diction_timestamp_not_reseted, res_diction_time_not_normalised
 
 # seems the costs are cumulative but i dont understand why they have such value
+def cost_values_per_day(cost_values):
+    x_values = range(len(cost_values))
+
+    # Plotting the MSE values
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_values, cost_values, marker='o', linestyle='-', color='b')
+
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Dni')
+    # find slovak translation of MSE
+    plt.ylabel('Cena')
+    # plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.grid()
+    plt.legend()
+
+    plt.ylim(bottom=0)
+    plt.xlim(left=0, right=1)
+
+    # Show the plot
+    plt.show()
+# can work for
 def mpe_cost_graph(mpe_values,cost_values):
     x_values = range(len(mpe_values))
 
-    # Plotting the MSE values
     plt.figure(figsize=(10, 5))
     plt.plot(mpe_values, cost_values, marker='o', linestyle='-', color='b')
 
     # Adding labels and title
     # plt.title('Mean Squared Error per Day')
     plt.xlabel('MPE')
-    # find slovak translation of MSE
     plt.ylabel('Cena')
     # plt.xticks(x_values)  # Set x ticks to be the indices
     plt.grid()
@@ -362,7 +366,7 @@ def plot_arrivals_for_given_day(evs, day, period):
         index, arrival_timestamp, departure_timestamp, maximum_charging_rate, energy_requested = evs[i]
         y_weights[arrival_timestamp] += 1
 
-    # Plotting the MSE values
+
     plt.figure(figsize=(10, 5))
     plt.plot(x_values, y_weights, marker='o', linestyle='-', color='b')
 
@@ -370,7 +374,6 @@ def plot_arrivals_for_given_day(evs, day, period):
     plt.title(f'Príchody elektromobilov pre deň {day}')
     # plt.title('Mean Squared Error per Day')
     plt.xlabel('Hodiny')
-    # find slovak translation of MSE
     plt.ylabel('Počet príchodov elektromobilov')
     # plt.xticks(x_values)  # Set x ticks to be the indices
     plt.xticks(np.arange(0, 25, 1))
@@ -391,7 +394,6 @@ def plot_departures_for_given_day(evs, day, period):
         if departure_timestamp >= len(y_weights):
             continue
         y_weights[departure_timestamp] += 1
-    # Plotting the MSE values
     plt.figure(figsize=(10, 5))
     plt.plot(x_values, y_weights, marker='o', linestyle='-', color='b')
 
@@ -399,7 +401,6 @@ def plot_departures_for_given_day(evs, day, period):
     # Adding labels and title
     # plt.title('Mean Squared Error per Day')
     plt.xlabel('Hodiny')
-    # find slovak translation of MSE
     plt.ylabel('Počet odchodov elektromobilov')
     # plt.xticks(x_values)  # Set x ticks to be the indices
     plt.xticks(np.arange(0, 25, 1))
@@ -413,21 +414,22 @@ def plot_departures_for_given_day(evs, day, period):
 
 def comparison_pilot_signal_real_signal_graph(ut_signals,
                                               cumulative_charging_rates,
-                                              period):
-    x_values = np.arange(0, 24, period/60)
+                                              period,
+                                              opt_signals=None):
+    x_values = np.arange(0, 24, (period/60))
     plt.figure(figsize=(10, 5))
     plt.plot(x_values, ut_signals, marker='o', linestyle='-', color='b')
-    plt.plot(x_values, ut_signals, marker='o', linestyle='-', color='r')
-
+    plt.plot(x_values, cumulative_charging_rates, marker='o', linestyle='-', color='r')
+    # if opt_signals is not None:
+    #     plt.plot(x_values, opt_signals, marker='o', linestyle='-', color='k')
     # Adding labels and title
     # plt.title('Mean Squared Error per Day')
     plt.xlabel('Hodiny')
-    # find slovak translation of MSE
     plt.ylabel('Sila (kW)')
     # plt.xticks(x_values)  # Set x ticks to be the indices
     plt.xticks(np.arange(0, 25, 1))
     plt.grid()
-    plt.legend(['dodaná energia', 'nedodaná energia'], fontsize='medium')
+    plt.legend(['Hodnoty ut signálu', 'Množstvá dodanej energie pre všetky t'], fontsize='medium')
 
     plt.ylim(bottom=0)
     plt.xlim(left=0, right=24)
@@ -438,17 +440,15 @@ def comparison_pilot_signal_real_signal_graph(ut_signals,
 def charging_in_time_graph(ut_signals_offline,
                            period,
                            ut_signals_ppc=None,
-                           ut_signals_mpc = None):
+                           ut_signals_mpc=None):
     # x_values = range(len(ut_signals_offline))
     x_values = np.arange(0, 24, period/60)
-    # Plotting the MSE values
     plt.figure(figsize=(10, 5))
     plt.plot(x_values, ut_signals_offline, marker='o', linestyle='-', color='b')
 
     # Adding labels and title
     # plt.title('Mean Squared Error per Day')
     plt.xlabel('Hodiny')
-    # find slovak translation of MSE
     plt.ylabel('Sila (kW)')
     # plt.xticks(x_values)  # Set x ticks to be the indices
     plt.xticks(np.arange(0, 25, 1))
@@ -482,7 +482,7 @@ def plot_costs(costs,period,ticks_after_hours=1):
     # Show the plot
     plt.show()
 
-
+# assumes that schedule is a matrix where column is charging plan for time t
 def calculate_cumulative_costs(schedule:np.array,cost_vector):
     res = 0
     cols = schedule.shape[1]
@@ -497,12 +497,26 @@ def calculate_cumulative_costs_given_ut(uts:np.array,cost_vector):
     return res
 
 
-def costs_per_day_graph(costs):
-    x_values = range(len(costs))
+def generate_random_colors(n):
+    # Get a list of all named colors
+    colors = list(mcolors.CSS4_COLORS.keys())
 
-    # Plotting the MSE values
+    # Randomly select n unique colors
+    selected_colors = random.sample(colors, n)
+
+    return selected_colors
+
+# assumes that costs_per_alg is 2 dimensional and each element are costs for specific alg
+def costs_per_day_graph(costs_per_alg,
+                        legend_names_in_order,
+                        colors_of_graphs):
+    costs_per_alg = np.array(costs_per_alg)
+    if costs_per_alg.ndim == 1:
+        costs_per_alg = [costs_per_alg]
     plt.figure(figsize=(10, 5))
-    plt.plot(x_values, costs, marker='o', linestyle='-', color='b')
+    x_values = range(len(costs_per_alg[0]))
+    for i in range(len(costs_per_alg)):
+        plt.plot(x_values, costs_per_alg[i], marker='o', linestyle='-', color=colors_of_graphs[i])
 
     # Adding labels and title
     # plt.title('Mean Squared Error per Day')
@@ -511,18 +525,30 @@ def costs_per_day_graph(costs):
     plt.ylabel('Kumulatívna cena energie')
     plt.xticks(x_values)  # Set x ticks to be the indices
     plt.grid()
-    plt.legend()
+    plt.legend(legend_names_in_order)
 
     plt.ylim(bottom=0)
     # Show the plot
     plt.show()
-def mpe_per_day_graph(mpe_values):
+def mpe_per_day_graph(mpe_values_per_alg,
+                      legend_names_in_order,
+                      colors_of_graphs
+                      ):
+    mpe_values_per_alg = np.array(mpe_values_per_alg)
+    if mpe_values_per_alg.ndim == 1:
+        mpe_values_per_alg = [mpe_values_per_alg]
+    plt.figure(figsize=(10, 5))
+    x_values = range(len(mpe_values_per_alg[0]))
+    for i in range(len(mpe_values_per_alg)):
+        plt.plot(x_values, mpe_values_per_alg[i], marker='o', linestyle='-', color=colors_of_graphs[i])
+
+
     # Create an array of indices (x values)
-    x_values = range(len(mpe_values))
+    # x_values = range(len(mpe_values_per_alg))
 
     # Plotting the MSE values
-    plt.figure(figsize=(10, 5))
-    plt.plot(x_values, mpe_values, marker='o', linestyle='-', color='b')
+    # plt.figure(figsize=(10, 5))
+    # plt.plot(x_values, mpe_values, marker='o', linestyle='-', color='b')
 
     # Adding labels and title
     # plt.title('Mean Squared Error per Day')
@@ -531,20 +557,29 @@ def mpe_per_day_graph(mpe_values):
     plt.ylabel('MPE')
     plt.xticks(x_values)  # Set x ticks to be the indices
     plt.grid()
-    plt.legend()
+    plt.legend(legend_names_in_order)
 
     # Set y-axis limits from 0 to 1
     plt.ylim(0, 1)
 
     # Show the plot
     plt.show()
-def mse_per_day_graph(mse_values):
+def mse_per_day_graph(mse_values_per_alg,
+                      legend_names_in_order,
+                      colors_of_graphs):
     # Create an array of indices (x values)
-    x_values = range(len(mse_values))
 
     # Plotting the MSE values
     plt.figure(figsize=(10, 5))
-    plt.plot(x_values, mse_values, marker='o', linestyle='-', color='b', label='MSE Values')
+    # plt.plot(x_values, mse_values, marker='o', linestyle='-', color='b', label='MSE Values')
+
+    mse_values_per_alg = np.array(mse_values_per_alg)
+    if mse_values_per_alg.ndim == 1:
+        mse_values_per_alg = [mse_values_per_alg]
+    plt.figure(figsize=(10, 5))
+    x_values = range(len(mse_values_per_alg[0]))
+    for i in range(len(mse_values_per_alg)):
+        plt.plot(x_values, mse_values_per_alg[i], marker='o', linestyle='-', color=colors_of_graphs[i])
 
     # Adding labels and title
     # plt.title('Mean Squared Error per Day')
@@ -553,21 +588,24 @@ def mse_per_day_graph(mse_values):
     plt.ylabel('MSE')
     plt.xticks(x_values)  # Set x ticks to be the indices
     plt.grid()
-    plt.legend()
+    plt.legend(legend_names_in_order)
 
     # Set y-axis limits from 0 to 1
-    plt.ylim(0, 1)
+    # plt.ylim(0, 1)
     # Show the plot
     plt.show()
 # draws barchart for one day
 def draw_barchart_sessions_from_RL(dict_of_evs,
-                                   tick_after_bars=10):
+                                   dict_of_arrivals_and_departures,
+                                   tick_after_bars=10,
+                                   charging_date=None,
+                                   alg='PPC'):
     energies_requested = []
     energies_undelivered = []
     for key, value in dict_of_evs.items():
-        index, energy_requested, energy_undelivered = value
-        energy_requested.append(energy_requested)
-        energy_undelivered.append(energy_undelivered)
+        energy_requested, energy_undelivered = value
+        energies_requested.append(energy_requested)
+        energies_undelivered.append(energy_undelivered)
     plt.bar([i for i in range(len(energies_requested))], energies_requested, color='lightblue', edgecolor='lightblue')
     plt.bar([i for i in range(len(energies_requested))], energies_undelivered, color='black', edgecolor='black')
     # Add titles and labels
@@ -587,6 +625,11 @@ def draw_barchart_sessions_from_RL(dict_of_evs,
 
     # Add a legend with comments only
     plt.legend(['dodaná energia', 'nedodaná energia'], fontsize='medium')
+    if charging_date is None:
+        plt.title(f'Dodaná energia elektromobilom pri použití {alg} algoritmu')
+    else:
+        formatted_date = charging_date.strftime("%Y-%m-%d")  # Format: YYYY-MM-DD
+        plt.title(f'Dodaná energia elektromobilom (deň: {formatted_date}) pri použití {alg} algoritmu')
     # Show the plot
     plt.show()
 
@@ -606,7 +649,7 @@ def draw_barchart_sessions(schedule:np.array, evs_dict_reseted,
             try:
                 energy_undelivered = energy_requested - math.fsum(schedule[ev_index,:])
                 energies_undelivered_for_each_day[key].append(max(energy_undelivered, 0))
-            except IndexError:
+            except:
                 energies_undelivered_for_each_day[key].append(max(energy_requested - 0, 0))
 
 
@@ -749,6 +792,97 @@ def random_choice_evs(evs:list,
             randomly_chosen_evs_not_normalised_time.append([ev_index] + evs_time_not_normalised[index])
             ev_index += 1
     return randomly_chosen_evs, randomly_chosen_evs_not_normalised_time
+
+
+def get_evs_data_from_document_advanced_settings(
+        document,
+        start:datetime,
+        end:datetime,
+        number_of_evs_interval,
+        period=5,
+        allow_overday_charging=True,
+        include_weekends=False,
+        max_charging_rate_within_interval=None,
+
+
+):
+    date_to_evs_dict_timestamp_reseted = {}
+    date_to_evs_dict_timestamp_not_reseted = {}
+    date_to_evs_dict_time_not_normalised = {}
+    with open(document, 'r') as file:
+        data = json.load(file)
+        for ev in data["_items"]:
+            date_format = '%a, %d %b %Y %H:%M:%S GMT'
+            connection_time = datetime.strptime(ev['connectionTime'], date_format)
+            disconnect_time = datetime.strptime(ev['disconnectTime'], date_format)
+
+            la_lt = pytz.timezone('America/Los_Angeles')
+            connection_time = connection_time.astimezone(la_lt)
+            disconnect_time = disconnect_time.astimezone(la_lt)
+            start_of_day = connection_time.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+            energy_requested = ev["kWhDelivered"]
+            maximum_charging_rate = 6.6
+            if max_charging_rate_within_interval is not None:
+                maximum_charging_rate = random.uniform(max_charging_rate_within_interval[0],
+                                                       max_charging_rate_within_interval[1])
+            if not include_weekends and is_weekend(connection_time):
+                continue
+            if not allow_overday_charging and connection_time.date() != disconnect_time.date():
+                continue
+            if not (start <= connection_time <= end):
+                continue
+            arrival_timestamp_reseted = datetime_to_timestamp(start=start_of_day, chosen_date=connection_time, period=period)
+            departure_timestamp_reseted = datetime_to_timestamp(start=start_of_day, chosen_date=disconnect_time,
+                                                              period=period)
+            arrival_timestamp_not_reseted = datetime_to_timestamp(start=start, chosen_date=connection_time,
+                                                              period=period)
+            departure_timestamp_not_reseted = datetime_to_timestamp(start=start, chosen_date=disconnect_time,
+                                                                period=period)
+
+            ev_index = len(date_to_evs_dict_timestamp_reseted.get(start_of_day, []))
+            ev_timestamp_reseted = [
+                ev_index,
+                arrival_timestamp_reseted,
+                departure_timestamp_reseted,
+                maximum_charging_rate,
+                energy_requested
+            ]
+            ev_timestamp_not_reseted = [
+                ev_index,
+                arrival_timestamp_not_reseted,
+                departure_timestamp_not_reseted,
+                maximum_charging_rate,
+                energy_requested
+            ]
+            ev_time_not_normalised = [
+                ev_index,
+                connection_time,
+                disconnect_time,
+                maximum_charging_rate,
+                energy_requested
+
+            ]
+
+            if date_to_evs_dict_timestamp_reseted.get(start_of_day, None) is None:
+                date_to_evs_dict_timestamp_reseted[start_of_day] = []
+                date_to_evs_dict_timestamp_not_reseted[start_of_day] = []
+                date_to_evs_dict_time_not_normalised[start_of_day] = []
+            date_to_evs_dict_timestamp_reseted[start_of_day].append(ev_timestamp_reseted)
+            date_to_evs_dict_timestamp_not_reseted[start_of_day].append(ev_timestamp_not_reseted)
+            date_to_evs_dict_time_not_normalised[start_of_day].append(ev_time_not_normalised)
+        copy_of_dict = copy.deepcopy(date_to_evs_dict_timestamp_reseted)
+        for key, value in copy_of_dict.items():
+            if not (number_of_evs_interval[0] <= len(value) <= number_of_evs_interval[1]):
+                del date_to_evs_dict_timestamp_reseted[key]
+                del date_to_evs_dict_timestamp_not_reseted[key]
+                del date_to_evs_dict_time_not_normalised[key]
+                continue
+    return date_to_evs_dict_timestamp_reseted,date_to_evs_dict_timestamp_not_reseted, date_to_evs_dict_time_not_normalised
+
+
+
 
 
 # caltech's website for ev data is not accessible, therefore we don't often use this function for extracting input data
@@ -999,16 +1133,16 @@ def mpe_for_more_days(schedule_for_each_day, evs_for_each_day):
 def mse_error_fun_rl_testing(sum_of_charging_rates, ut_signals, capacity_constraint):
     res_mse_error = 0
     for col in range(len(sum_of_charging_rates)):
-        res_mse_error += abs(sum_of_charging_rates - ut_signals[col])**2
-    return res_mse_error / capacity_constraint
+        res_mse_error += abs(sum_of_charging_rates[col] - ut_signals[col])**2 / capacity_constraint
+    return res_mse_error
 def mpe_error_fun_rl_testing(ev_diction):
-    overall_energy_delivered = 0
     overall_energy_requested = 0
+    overall_energy_delivered = 0
     for ev, ev_values in ev_diction.items():
         requested_energy, undelivered_energy = ev_values
-        delivered_energy = requested_energy - undelivered_energy
+        ev_delivered_energy = requested_energy - undelivered_energy
         overall_energy_requested += requested_energy
-        overall_energy_delivered += delivered_energy
+        overall_energy_delivered += ev_delivered_energy
     return 1 - (overall_energy_delivered / overall_energy_requested)
 
 def mpe_error_fun(schedule, evs):

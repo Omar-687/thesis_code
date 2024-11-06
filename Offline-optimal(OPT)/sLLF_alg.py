@@ -48,27 +48,35 @@ class SmoothedLeastLaxityAlg(SchedulingAlg):
             laxities_of_all_evs[index] = laxity
         return laxities_of_all_evs
 
+    # is OK function but in case maximum charging rate is not homogenous it needs to be updated
     def get_laxities_given_observation(self, observation,
                                        maximum_charging_rate,
-                                       number_of_evse):
+                                       number_of_evse,
+                                       activated_evse):
         laxities = []
         for i in range(number_of_evse):
+            if activated_evse[i] == 0:
+                continue
             map_evse_to_observation = i * 2
             remaining_charging_time_of_ev = observation[map_evse_to_observation]
             remaining_requested_energy_of_ev = observation[map_evse_to_observation + 1]
-            laxity = remaining_requested_energy_of_ev - (remaining_charging_time_of_ev / maximum_charging_rate)
+            laxity = remaining_charging_time_of_ev  - (remaining_requested_energy_of_ev / maximum_charging_rate)
             laxities.append(laxity)
         return laxities
 
 
-
+    # seems ok
     def get_schedule_given_L_t_and_observation(self,
                                observation,
                                maximum_charging_rate,
                                L_t,
-                               number_of_evse=54):
+                               activated_evse,
+                               number_of_evse=54,
+                               ):
         charging_rates = [0 for i in range(number_of_evse)]
         for i in range(number_of_evse):
+            if activated_evse[i] == 0:
+                continue
             map_ev_to_obs = i * 2
             ev_remaining_charging_time = observation[map_ev_to_obs]
             ev_remaining_energy_to_be_charged = observation[map_ev_to_obs + 1]
@@ -97,12 +105,13 @@ class SmoothedLeastLaxityAlg(SchedulingAlg):
                 maximum_charging_rate=ev_maximum_charging_rate
             )
         return charging_rates
-
+    # seems ok maybe check article again if you think it has error
     def optimization_problem_bisection_solution_given_observation(self,
                                                 observation:list,
                                                 evs_laxities:list,
                                                 maximum_charging_rate,
                                                 available_energy,
+                                                activated_evse,
                                                 number_of_evse=54
                                                 ):
         lower_bound_Lt = min(evs_laxities) - 1
@@ -113,7 +122,8 @@ class SmoothedLeastLaxityAlg(SchedulingAlg):
                 observation=observation,
                 maximum_charging_rate=maximum_charging_rate,
                 L_t=middle_Lt,
-                number_of_evse=number_of_evse)
+                number_of_evse=number_of_evse,
+                activated_evse=activated_evse)
 
             given_energy = math.fsum(charging_rates)
             if given_energy > available_energy:
@@ -178,19 +188,23 @@ class SmoothedLeastLaxityAlg(SchedulingAlg):
                                                      observation,
                                                      maximum_charging_rate,
                                                      available_energy,
-                                                     number_of_evse):
+                                                     number_of_evse,
+                                                     activated_evse):
         laxities = self.get_laxities_given_observation(observation=observation,
                                             maximum_charging_rate=maximum_charging_rate,
-                                            number_of_evse=number_of_evse)
+                                            number_of_evse=number_of_evse,
+                                            activated_evse=activated_evse)
         optimal_Lt = self.optimization_problem_bisection_solution_given_observation(observation=observation,
                                                                        evs_laxities=laxities,
                                                                        maximum_charging_rate=maximum_charging_rate,
                                                                        available_energy=available_energy,
-                                                                       number_of_evse=number_of_evse)
+                                                                       number_of_evse=number_of_evse,
+                                                                       activated_evse=activated_evse)
         schedule = self.get_schedule_given_L_t_and_observation(observation=observation,
                                                                maximum_charging_rate=maximum_charging_rate,
                                                                L_t=optimal_Lt,
-                                                               number_of_evse=number_of_evse)
+                                                               number_of_evse=number_of_evse,
+                                                               activated_evse=activated_evse)
 
         return schedule
 

@@ -72,16 +72,21 @@ class LeastLaxityFirstAlg(SchedulingAlg):
                 minimum_value = maximum_feasible_charging_rate_of_ev
 
         return minimum_value
+    # decide if you should charge [a,d] or [a,d) interval maybe it doesnt matter much
+    # aside from that it seems to be ok
     def get_indices_of_evs_from_smallest_to_biggest_laxity_given_observation(self,
                                                                              observation,
                                                                              maximum_charging_rate,
-                                                                             number_of_evse=54):
+                                                                             activated_evse,
+                                                                             number_of_evse=54,
+                                                                             ):
         ev_to_laxities = []
         for ev_index in range(0, number_of_evse):
+            # not activated evse and cars which depart now dont interest us
+            if activated_evse[ev_index] == 0 or (observation[ev_index*2] == 0 and activated_evse[ev_index] == 1):
+                continue
             ev_observation_index = ev_index * 2
             ev_remaining_charging_time = observation[ev_observation_index]
-            if ev_remaining_charging_time == 0:
-                continue
             ev_remaining_requested_energy = observation[ev_observation_index + 1]
             laxity_of_ev = ev_remaining_charging_time - (ev_remaining_requested_energy / maximum_charging_rate)
             ev_to_laxities.append([ev_index, laxity_of_ev])
@@ -92,17 +97,22 @@ class LeastLaxityFirstAlg(SchedulingAlg):
             observation,
             maximum_charging_rate,
             number_of_evse,
-            available_energy):
+            available_energy,
+            activated_evse):
         ev_to_laxities = self.get_indices_of_evs_from_smallest_to_biggest_laxity_given_observation(observation=observation,
-                                                                                           maximum_charging_rate=maximum_charging_rate)
+                                                                                           maximum_charging_rate=maximum_charging_rate,
+                                                                                           activated_evse=activated_evse)
         ev_to_laxities.sort(key=lambda x: x[1])
         schedule = [0 for i in range(number_of_evse)]
         for ev_info in ev_to_laxities:
             if available_energy <= 0:
                 break
             ev_index, laxity_of_ev = ev_info
-            map_to_obs = 2*ev_index
-            ev = [maximum_charging_rate, observation[map_to_obs]]
+            map_to_obs_remaining_energy = 2*ev_index + 1
+            remaining_energy_to_be_charged = observation[map_to_obs_remaining_energy]
+            if remaining_energy_to_be_charged <= 0:
+                continue
+            ev = [maximum_charging_rate, remaining_energy_to_be_charged]
             maximum_feasible_charging_rate = self.find_maximum_feasible_charging_rate_given_observation(ev=ev,
                                                                                                         remaining_available_energy_at_given_timestep=available_energy
                                                                                                         )

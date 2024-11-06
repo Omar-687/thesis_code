@@ -15,10 +15,17 @@ def check_charging_rates_within_bounds(evs, charging_rates):
                     return False
     return True
 
+# possibly if ut is time varying change the function, but for now it is enough
 def check_infrastructure_not_violated(charging_rates,
-                                      available_energy_for_each_timestep):
+                                      available_energy_for_each_timestep,
+                                      max_ut=None):
     for col in range(charging_rates.shape[1]):
-        if math.fsum(charging_rates[:, col]) > available_energy_for_each_timestep[col]:
+        available_energy = 0
+        if isinstance(max_ut,int) or isinstance(max_ut,float):
+            available_energy = max_ut
+        else:
+            available_energy = available_energy_for_each_timestep[col]
+        if math.fsum(charging_rates[:, col]) > available_energy:
             return False
     return True
 

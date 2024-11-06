@@ -11,11 +11,13 @@ def is_solution_feasible(EVs,
                          available_energy_for_each_timestep,
                          algorithm_name,
                          gamma = 1,
-                         num_of_evse=54):
+                         num_of_evse=54,
+                         max_ut=None):
     if not check_charging_rates_within_bounds(evs=EVs, charging_rates=charging_rates):
         return False
     if not check_infrastructure_not_violated(charging_rates=charging_rates,
-                                             available_energy_for_each_timestep=available_energy_for_each_timestep):
+                                             available_energy_for_each_timestep=available_energy_for_each_timestep,
+                                             max_ut=max_ut):
         return False
     if not check_all_energy_demands_met(evs=EVs,
                                         charging_rates=charging_rates,

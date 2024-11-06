@@ -131,7 +131,8 @@ class OPT(SchedulingAlg):
                     charging_rates=res,
                     available_energy_for_each_timestep=self.available_energy_for_each_timestep,
                     gamma=self.gamma,
-                    algorithm_name=self.algorithm_name
+                    algorithm_name=self.algorithm_name,
+                    max_ut= None if self.ut_interval is None else self.ut_interval[1]
             ):
                 return False, None
 
