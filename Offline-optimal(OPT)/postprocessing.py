@@ -1,6 +1,5 @@
 import math
 import copy
-from copy import deepcopy
 import numpy as np
 # in OPT solver decides whether solution is feasible or not
 # used in other algorithms
@@ -9,18 +8,44 @@ from testing_functions import (check_charging_rates_within_bounds,
                                check_all_energy_demands_met)
 def is_solution_feasible(EVs,
                          charging_rates,
-                         available_energy_for_each_timestep,
-                         algorithm_name):
+                         power_limit,
+                         algorithm_name,
+                         gamma = 1,
+                         period=12,
+                         algorithm_precision=1e-6,
+                         num_of_evse=54):
     if not check_charging_rates_within_bounds(evs=EVs, charging_rates=charging_rates):
         return False
     if not check_infrastructure_not_violated(charging_rates=charging_rates,
-                                             available_energy_for_each_timestep=available_energy_for_each_timestep):
+                                             power_limit=power_limit,
+                                             period=period,
+                                             accuracy=algorithm_precision):
         return False
+    # problems with accuracy
     if not check_all_energy_demands_met(evs=EVs,
                                         charging_rates=charging_rates,
+                                        gamma=gamma,
                                         algorithm_name=algorithm_name):
         return False
+    # if not are_enough_evses(schedule=charging_rates,num_of_evse=num_of_evse):
+    #     return False
     return True
+def are_enough_evses(evs, num_of_evse):
+    for ev_index in range(len(evs)):
+        arr = [ev_index]
+        for ev2_index in range(ev_index + 1, len(evs)):
+            index1, arrival_time1, departure_time1, maximum_charging_rate1, requested_energy1 = evs[ev_index]
+            index2, arrival_time2, departure_time2, maximum_charging_rate2, requested_energy2 = evs[ev2_index]
+            if departure_time2 >= arrival_time1 >= arrival_time2:
+                arr.append(ev2_index)
+            if departure_time2 >= departure_time1 >= arrival_time2:
+                arr.append(ev2_index)
+        if len(arr) > num_of_evse:
+            return False
+
+    return True
+
+
 # works for one column schedule
 def get_maximum_possible_charging_values_given_schedule(
         active_evs,

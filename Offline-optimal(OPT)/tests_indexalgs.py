@@ -1,7 +1,5 @@
 from datetime import datetime, timedelta
 import math
-
-from adacharge import cost_function
 from scheduling_alg import SchedulingAlg
 from index_based_algs import *
 from utils import *

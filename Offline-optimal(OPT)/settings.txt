@@ -1,7 +1,7 @@
-Pocet aut = 6
+Pocet aut = 10
 zaciatok nabijania = 2018-04-26 00:00:00
 koniec nabijania = 2018-04-26 23:59:59
-Dlzka casoveho horizontu T = 576
+Dlzka casoveho horizontu T = 288
 Cenova funkcia: c_nt = t
 Pocet nabijaciek = 54
 Data o autach sme ziskali z nabijacich stanic  a z ich garazi 

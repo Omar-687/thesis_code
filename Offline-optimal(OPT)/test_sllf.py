@@ -1,20 +1,15 @@
-from setuptools.command.alias import alias
-from acnportal import acnsim, algorithms
-import pytz
-from datetime import datetime, timedelta
-import random
-import pandas as pd
-import json
-import math
 from sLLF_alg import SmoothedLeastLaxityAlg
-from index_based_algs import *
-from utils import *
 # import ACNDataStatic
 import unittest
-from os.path import exists
+
+from index_based_algs import *
+from sLLF_alg import SmoothedLeastLaxityAlg
 from testing_functions import (check_all_energy_demands_met,
                                check_charging_rates_within_bounds,
                                check_infrastructure_not_violated)
+from utils import *
+
+
 class testsLLF(unittest.TestCase):
     def test1(self):
         filename = 'acndata_sessions_acn.json'

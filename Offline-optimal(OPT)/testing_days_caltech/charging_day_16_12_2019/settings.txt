@@ -1,0 +1,13 @@
+Pocet aut = 40
+zaciatok nabijania = 2019-12-16 00:00:00-08:00
+koniec nabijania = 2019-12-16 23:59:59-08:00
+casova zona =  Amerika/Los Angeles
+Dlzka casoveho horizontu T = 120
+Pocet nabijaciek = 54
+Data o autach sme ziskali z nabijacich stanic c, a, l, t, e, c, h a z ich garazi California_Garage_01, California_Garage_02, LIGO_01, N_Wilson_Garage_01, S_Wilson_Garage_01
+Operacne obmedzenia = ut <= 150kW
+Cas medzi susednymi casovymi krokmi = 12 min
+Pouzity algoritmus = PPC, Offline optimal
+Pouzity Offline optimal solver = SCIP
+Mnozina uskutocnitelnych akcii U = [  0.          16.66666667  33.33333333  50.          66.66666667
+  83.33333333 100.         116.66666667 133.33333333 150.        ]
