@@ -9,21 +9,21 @@ class LeastLaxityFirstAlg(SchedulingAlg):
                  EVs,
                  start,
                  end,
-                 available_energy_for_each_timestep,
+                 power_limit=None,
                  time_between_timesteps=5,
                  accuracy=1e-8,
                  number_of_evse=54,
                  cost_function=None,
                  process_output=True,
                  costs_loaded_manually=None,
-                 info_about_future_costs=True,
-                 set_available_energy_for_each_timestep=True,
-                 set_time_horizon=True
+                 info_about_future_costs=False,
+                 set_power_limit_for_each_timestep=False,
+                 set_time_horizon=False
                  ):
         super().__init__(EVs=EVs,
                          start=start,
                          end=end,
-                         available_energy_for_each_timestep=available_energy_for_each_timestep,
+                         power_limit=power_limit,
                          time_between_timesteps=time_between_timesteps,
                          accuracy=accuracy,
                          number_of_evse=number_of_evse,
@@ -31,7 +31,7 @@ class LeastLaxityFirstAlg(SchedulingAlg):
                          process_output=process_output,
                          costs_loaded_manually=costs_loaded_manually,
                          info_about_future_costs=info_about_future_costs,
-                         set_available_energy_for_each_timestep=set_available_energy_for_each_timestep,
+                         set_power_limit_for_each_timestep=set_power_limit_for_each_timestep,
                          set_time_horizon=set_time_horizon)
         self.algorithm_name = 'LLF'
 
@@ -141,7 +141,7 @@ class LeastLaxityFirstAlg(SchedulingAlg):
             evs_remaining_energy_to_be_charged=evs_remaining_energy_to_be_charged,
             current_timestep=current_timestep)
 
-        remaining_available_energy_at_given_timestep = copy.deepcopy(self.available_energy_for_each_timestep)
+        remaining_available_energy_at_given_timestep = copy.deepcopy(self.power_limit)
         for ev in sorted_active_evs:
             index = ev[0]
             ev_remaining_energy_to_be_charged = evs_remaining_energy_to_be_charged[index][1]
@@ -177,7 +177,7 @@ class LeastLaxityFirstAlg(SchedulingAlg):
             sorted_active_evs = self.sort_evs(evs=active_evs,
                           evs_remaining_energy_to_be_charged=evs_remaining_energy_to_be_charged,
                           current_timestep=current_timestep)
-            remaining_available_energy_at_given_timestep = copy.deepcopy(self.available_energy_for_each_timestep)
+            remaining_available_energy_at_given_timestep = copy.deepcopy(self.power_limit)
             for ev in sorted_active_evs:
                 index = ev[0]
                 ev_remaining_energy_to_be_charged = evs_remaining_energy_to_be_charged[index]
@@ -193,7 +193,7 @@ class LeastLaxityFirstAlg(SchedulingAlg):
 
         feasibility = is_solution_feasible(EVs=self.EVs,
                                            charging_rates=self.charging_plan_for_all_ev,
-                                           available_energy_for_each_timestep=self.available_energy_for_each_timestep,
+                                           power_limit=self.power_limit,
                                            algorithm_name=self.algorithm_name)
         return feasibility, self.charging_plan_for_all_ev
 

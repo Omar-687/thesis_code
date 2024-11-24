@@ -8,7 +8,7 @@ from scheduling_alg import SchedulingAlg
 from opt_algorithm import OPT
 class testOtherMethods(unittest.TestCase):
     def testEvsGeneration(self):
-        filename = 'acndata_sessions_acn.json'
+        filename = 'caiso_2016/acndata_sessions_acn.json'
         start = datetime(2018, 4, 26, 0, 0, 0)
         end = datetime(2018, 4, 26, 23, 59, 59)
         period = 5
@@ -36,7 +36,7 @@ class testOtherMethods(unittest.TestCase):
             self.assertTrue(end >= evs_time_not_normalised[i][departure_time_index] >= start)
 
     def testEvFileGeneration(self):
-        filename = 'acndata_sessions_acn.json'
+        filename = 'caiso_2016/acndata_sessions_acn.json'
         txt_ev_info_filename = 'evs_data_test_file.txt'
         start = datetime(2018, 4, 26, 0, 0, 0)
         end = datetime(2018, 4, 26, 23, 59, 59)
@@ -56,7 +56,7 @@ class testOtherMethods(unittest.TestCase):
         self.assertTrue(file_exists)
 
     def testEvFileContent(self):
-        filename = 'acndata_sessions_acn.json'
+        filename = 'caiso_2016/acndata_sessions_acn.json'
         txt_ev_info_filename = 'evs_data_test_file.txt'
         start = datetime(2018, 4, 26, 0, 0, 0)
         end = datetime(2018, 4, 26, 23, 59, 59)
@@ -267,7 +267,7 @@ class testOtherMethods(unittest.TestCase):
         end = datetime(2018, 4, 29, 23, 59, 59)
         period = 5
         # num_of_days = (end - start).days + 1
-        filename = 'acndata_sessions_acn.json'
+        filename = 'caiso_2016/acndata_sessions_acn.json'
         evs, evs_time_not_normalised = get_evs_data_from_document(document=filename,
                                                                   start=start,
                                                                   end=end,

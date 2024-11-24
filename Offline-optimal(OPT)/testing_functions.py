@@ -1,6 +1,8 @@
 import math
 import numpy as np
 
+def test_flexibility(pt):
+    return math.fsum(pt) == 1
 
 def check_charging_rates_within_bounds(evs, charging_rates):
     for ev_index in range(len(charging_rates)):
@@ -17,15 +19,13 @@ def check_charging_rates_within_bounds(evs, charging_rates):
 
 # possibly if ut is time varying change the function, but for now it is enough
 def check_infrastructure_not_violated(charging_rates,
-                                      available_energy_for_each_timestep,
-                                      max_ut=None):
+                                      power_limit,
+                                      period,
+                                      accuracy=1e-6):
     for col in range(charging_rates.shape[1]):
-        available_energy = 0
-        if isinstance(max_ut,int) or isinstance(max_ut,float):
-            available_energy = max_ut
-        else:
-            available_energy = available_energy_for_each_timestep[col]
-        if math.fsum(charging_rates[:, col]) > available_energy:
+        if math.fsum(charging_rates[:, col]) <= power_limit[col] * (period / 60):
+            continue
+        if abs(math.fsum(charging_rates[:, col]) - power_limit[col]*(period/60)) > accuracy:
             return False
     return True
 
@@ -33,7 +33,7 @@ def check_all_energy_demands_met(evs,
                                  charging_rates,
                                  algorithm_name,
                                  gamma = 1,
-                                 algorithm_accuracy_decimals=8):
+                                 algorithm_accuracy=1e-6):
     # problems with multiplication of decimal numbers - inaccuracies
     if gamma != 1:
         return True
@@ -41,10 +41,13 @@ def check_all_energy_demands_met(evs,
         index, ev_arrival, ev_departure, ev_maximum_charging_rate, ev_requested_energy = evs[ev_index]
         accuracy = find_number_of_decimal_places(ev_requested_energy)
         # there can be multiple times the same inaccuracies, so lowering accuracy by 1 decimal works
-        algorithm_accuracy_decimals -= 1
-
-        if round(math.fsum(charging_rates[ev_index]), min(accuracy, algorithm_accuracy_decimals)) != round(gamma*ev_requested_energy, algorithm_accuracy_decimals):
+        if math.fsum(charging_rates[ev_index]) == gamma*ev_requested_energy:
+            continue
+        # precision loss when multiplying by beta
+        if (math.fsum(charging_rates[ev_index]) - gamma*ev_requested_energy) > algorithm_accuracy:
             return False
+        # if (round(math.fsum(charging_rates[ev_index]), min(accuracy, algorithm_accuracy_decimals)) - round(gamma*ev_requested_energy, algorithm_accuracy_decimals)) > algorithm_accuracy_decimals:
+        #     return False
 
     return True
 

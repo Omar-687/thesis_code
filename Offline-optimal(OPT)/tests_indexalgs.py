@@ -14,7 +14,7 @@ from testing_functions import (check_all_energy_demands_met,
 from os.path import exists
 class testLLF(unittest.TestCase):
     def test1(self):
-        filename = 'acndata_sessions_acn.json'
+        filename = 'caiso_2016/acndata_sessions_acn.json'
         txt_ev_info_filename = 'evs_data.txt'
         settings_filename = 'settings.txt'
         start = datetime(2018, 4, 26, 0, 0, 0)
@@ -168,7 +168,7 @@ class testLLF(unittest.TestCase):
                              number_of_evse=number_of_evse)
 
     def test1_infeasible(self):
-        filename = 'acndata_sessions_acn.json'
+        filename = 'caiso_2016/acndata_sessions_acn.json'
         txt_ev_info_filename = 'evs_data.txt'
         settings_filename = 'settings.txt'
         start = datetime(2018, 4, 26, 0, 0, 0)
@@ -229,7 +229,7 @@ class testLLF(unittest.TestCase):
         start = datetime(2018, 4, 26, 0, 0, 0)
         end = datetime(2018, 4, 29, 23, 59, 59)
         period = 5
-        filename = 'acndata_sessions_acn.json'
+        filename = 'caiso_2016/acndata_sessions_acn.json'
         evs, evs_time_not_normalised = get_evs_data_from_document(document=filename,
                                                                   start=start,
                                                                   end=end,

@@ -11,7 +11,7 @@ class SmoothedLeastLaxityAlg(SchedulingAlg):
     def __init__(self, EVs,
                        start,
                        end,
-                       available_energy_for_each_timestep,
+                       power_limit,
                        time_between_timesteps=5,
                        accuracy=1e-8,
                        number_of_evse=54,
@@ -19,13 +19,13 @@ class SmoothedLeastLaxityAlg(SchedulingAlg):
                        process_output=True,
                        costs_loaded_manually=None,
                        info_about_future_costs=True,
-                       set_available_energy_for_each_timestep=True,
+                       set_power_limit_for_each_timestep=True,
                        set_time_horizon=True
                        ):
         super().__init__(EVs=EVs,
                          start=start,
                          end=end,
-                         available_energy_for_each_timestep=available_energy_for_each_timestep,
+                         power_limit=power_limit,
                          time_between_timesteps=time_between_timesteps,
                          accuracy=accuracy,
                          number_of_evse=number_of_evse,
@@ -33,7 +33,7 @@ class SmoothedLeastLaxityAlg(SchedulingAlg):
                          process_output=process_output,
                          costs_loaded_manually=costs_loaded_manually,
                          info_about_future_costs=info_about_future_costs,
-                         set_available_energy_for_each_timestep=set_available_energy_for_each_timestep,
+                         set_power_limit_for_each_timestep=set_power_limit_for_each_timestep,
                          set_time_horizon=set_time_horizon)
         self.algorithm_name = 'sLLF'
 
@@ -149,7 +149,7 @@ class SmoothedLeastLaxityAlg(SchedulingAlg):
                 evs_remaining_energy_to_be_charged=evs_remaining_energy_to_be_charged)
 
             given_energy = math.fsum(charging_rates)
-            if given_energy > self.available_energy_for_each_timestep[timestep]:
+            if given_energy > self.power_limit[timestep]:
                 upper_bound_Lt = middle_Lt
             else:
                 lower_bound_Lt = middle_Lt
@@ -245,7 +245,7 @@ class SmoothedLeastLaxityAlg(SchedulingAlg):
         feasibility = is_solution_feasible(
             EVs=self.EVs,
             charging_rates=self.charging_plan_for_all_ev,
-            available_energy_for_each_timestep=self.available_energy_for_each_timestep,
+            power_limit=self.power_limit,
             algorithm_name=self.algorithm_name)
         return feasibility, self.charging_plan_for_all_ev
 

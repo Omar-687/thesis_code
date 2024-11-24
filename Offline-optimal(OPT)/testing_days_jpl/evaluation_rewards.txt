@@ -1,0 +1,1 @@
+Testovaci den = priemerne odmeny za dany den (epizodu)

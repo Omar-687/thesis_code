@@ -12,7 +12,7 @@ from utils import *
 
 class testsLLF(unittest.TestCase):
     def test1(self):
-        filename = 'acndata_sessions_acn.json'
+        filename = 'caiso_2016/acndata_sessions_acn.json'
         txt_ev_info_filename = 'evs_data.txt'
         settings_filename = 'settings.txt'
         start = datetime(2018, 4, 26, 0, 0, 0)
@@ -163,7 +163,7 @@ class testsLLF(unittest.TestCase):
         start = datetime(2018, 4, 26, 0, 0, 0)
         end = datetime(2018, 4, 29, 23, 59, 59)
         period = 5
-        filename = 'acndata_sessions_acn.json'
+        filename = 'caiso_2016/acndata_sessions_acn.json'
         evs, evs_time_not_normalised = get_evs_data_from_document(document=filename,
                                                                   start=start,
                                                                   end=end,
@@ -207,7 +207,7 @@ class testsLLF(unittest.TestCase):
         start = datetime(2018, 4, 26, 0, 0, 0)
         end = datetime(2018, 4, 29, 23, 59, 59)
         period = 5
-        filename = 'acndata_sessions_acn.json'
+        filename = 'caiso_2016/acndata_sessions_acn.json'
         evs, evs_time_not_normalised = get_evs_data_from_document(document=filename,
                                                                   start=start,
                                                                   end=end,

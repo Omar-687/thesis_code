@@ -18,7 +18,7 @@ from testing_functions import (check_all_energy_demands_met,
                                check_infrastructure_not_violated)
 class testsLLF(unittest.TestCase):
     def test1(self):
-        filename = 'acndata_sessions_acn.json'
+        filename = 'caiso_2016/acndata_sessions_acn.json'
         txt_ev_info_filename = 'evs_data.txt'
         settings_filename = 'settings.txt'
         start = datetime(2018, 4, 26, 0, 0, 0)

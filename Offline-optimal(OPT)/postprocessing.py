@@ -8,17 +8,20 @@ from testing_functions import (check_charging_rates_within_bounds,
                                check_all_energy_demands_met)
 def is_solution_feasible(EVs,
                          charging_rates,
-                         available_energy_for_each_timestep,
+                         power_limit,
                          algorithm_name,
                          gamma = 1,
-                         num_of_evse=54,
-                         max_ut=None):
+                         period=12,
+                         algorithm_precision=1e-6,
+                         num_of_evse=54):
     if not check_charging_rates_within_bounds(evs=EVs, charging_rates=charging_rates):
         return False
     if not check_infrastructure_not_violated(charging_rates=charging_rates,
-                                             available_energy_for_each_timestep=available_energy_for_each_timestep,
-                                             max_ut=max_ut):
+                                             power_limit=power_limit,
+                                             period=period,
+                                             accuracy=algorithm_precision):
         return False
+    # problems with accuracy
     if not check_all_energy_demands_met(evs=EVs,
                                         charging_rates=charging_rates,
                                         gamma=gamma,

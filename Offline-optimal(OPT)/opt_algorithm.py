@@ -18,28 +18,25 @@ class OPT(SchedulingAlg):
                  EVs,
                  start:datetime,
                  end:datetime,
-                 available_energy_for_each_timestep,
-                 ut_interval=None,
+                 power_limit,
                  gamma=1,
                  time_between_timesteps=5,
-                 accuracy=1e-8,
+                 accuracy=1e-6,
                  number_of_evse=54,
                  cost_function=None,
                  process_output=True,
                  costs_loaded_manually=None,
-                 info_about_future_costs=True,
-                 power_levels=10,
-                 is_u_discrete=False,
+                 info_about_future_costs=True
                  # no need to add parameters suited for current timestep optimisation
                  # when we use OPT only for time horizon optimisation
                  ):
         # change accuracy possibly
-        if accuracy != 1e-8:
-            raise ValueError('Accuracy of ECOS solver is 1e-8')
+        if accuracy != 1e-6:
+            raise ValueError('Accuracy of SCIP solver is 1e-6')
         super().__init__(EVs=EVs,
                          start=start,
                          end=end,
-                         available_energy_for_each_timestep=available_energy_for_each_timestep,
+                         power_limit=power_limit,
                          time_between_timesteps=time_between_timesteps,
                          accuracy=accuracy,
                          number_of_evse=number_of_evse,
@@ -48,51 +45,31 @@ class OPT(SchedulingAlg):
                          costs_loaded_manually=costs_loaded_manually,
                          info_about_future_costs=info_about_future_costs)
         self.algorithm_name = 'OPT'
-        self.power_levels = power_levels
         # gamma should be above 0
         self.gamma = gamma
-        self.is_u_discrete = is_u_discrete
-        self.ut_interval = ut_interval
     def solve(self, verbose=False):
 
         # matrix N*T
         all_charging_profiles_rn = cp.Variable(shape=(len(self.EVs), len(self.time_horizon)))
         lb = np.zeros(shape=(len(self.EVs), len(self.time_horizon)))
-        # all_Pts = np.zeros(shape=(len(self.time_horizon))) + self.available_energy_for_each_timestep
         all_ev_demanded_energy = np.zeros(shape=(len(self.EVs)))
         all_ev_maximum_charging_rate_matrix = np.zeros(shape=(len(self.EVs), len(self.time_horizon)))
         evs_remaining_energy_to_be_charged = {}
 
         for ev in self.EVs_indexed:
             index, ev_arrival, ev_departure, ev_maximum_charging_rate, ev_requested_energy = ev
+
+            # maximum charging rate already converted to kwh on input
             all_ev_demanded_energy[index] = ev_requested_energy
             evs_remaining_energy_to_be_charged[index] = ev_requested_energy
-            all_ev_maximum_charging_rate_matrix[index, ev_arrival : ev_departure + 1] += ev_maximum_charging_rate
+            all_ev_maximum_charging_rate_matrix[index, ev_arrival : ev_departure + 1] += (ev_maximum_charging_rate * (self.time_between_timesteps/60))
 
         constraints = []
         constraints.append(lb <= all_charging_profiles_rn)
-        # constraints.append(all_charging_profiles_rn <= all_ev_maximum_charging_rate_matrix)
         constraints.append(cp.sum(all_charging_profiles_rn, axis=1)  == (self.gamma * all_ev_demanded_energy))
         constraints.append(all_charging_profiles_rn <= all_ev_maximum_charging_rate_matrix)
-        if self.ut_interval is None:
-            constraints.append(cp.sum(all_charging_profiles_rn, axis=0) <= self.available_energy_for_each_timestep)
-        elif self.ut_interval is not None and not self.is_u_discrete:
-            lower_bound_ut, upper_bound_ut = self.ut_interval
-            constraints.append(lower_bound_ut <= cp.sum(all_charging_profiles_rn, axis=0))
-            constraints.append(cp.sum(all_charging_profiles_rn, axis=0) <= upper_bound_ut)
 
-        # this part is probably not necessary
-        elif self.ut_interval is not None and self.is_u_discrete:
-            binary_matrix = cp.Variable((10, len(self.time_horizon)), boolean=True)
-            arr_of_ones = np.ones(shape=(len(self.time_horizon)))
-            constraints.append(cp.sum(binary_matrix, axis=0) == arr_of_ones)
-
-            ut_signal = np.linspace(0,150,num=self.power_levels)
-            all_ut_signals = np.tile(ut_signal,(len(self.time_horizon), 1)).T
-            res_uts = cp.sum(cp.multiply(binary_matrix, all_ut_signals), axis=0)
-            constraints.append(cp.sum(all_charging_profiles_rn, axis=0) == res_uts)
-
-
+        constraints.append(cp.sum(all_charging_profiles_rn, axis=0) <= (self.power_limit*(self.time_between_timesteps/60)))
         objective = all_charging_profiles_rn @ self.cost_vector
         objective = cp.sum(cp.sum(objective, axis=0))
 
@@ -129,10 +106,10 @@ class OPT(SchedulingAlg):
             if not is_solution_feasible(
                     EVs=self.EVs,
                     charging_rates=res,
-                    available_energy_for_each_timestep=self.available_energy_for_each_timestep,
                     gamma=self.gamma,
                     algorithm_name=self.algorithm_name,
-                    max_ut= None if self.ut_interval is None else self.ut_interval[1]
+                    period=self.time_between_timesteps,
+                    power_limit=self.power_limit
             ):
                 return False, None
 

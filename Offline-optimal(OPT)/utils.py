@@ -15,6 +15,7 @@ from pathlib import Path
 from stable_baselines3.common.callbacks import BaseCallback
 import os
 import pytz
+from acnportal.acndata import DataClient
 from networks import *
 import pkg_resources
 import importlib.resources
@@ -141,17 +142,24 @@ def read_and_extract_time_series_ev_info(file,
 
     if include_overday_charging == False and arrival_time.date() != departure_time.date():
         return False, None, None
+    if departure_timestamp_reseted > max_timestamp:
+        ...
     arrival_timestamp = datetime_to_timestamp(start=start, chosen_date=arrival_time,
                                               period=period)
     departure_timestamp = datetime_to_timestamp(start=start, chosen_date=departure_time,
                                                 period=period)
 
 
-    max_charging_rate = (2 * energy_requested) / (departure_timestamp - arrival_timestamp + 1)
+    max_charging_rate = 6.6
 
     if max_charging_rate_within_interval is not None:
         max_charging_rate = random.uniform(max_charging_rate_within_interval[0],
                                            max_charging_rate_within_interval[1])
+    # we assume we are able to deliver enough energy to evs
+    # less conservative
+    if (1 + (departure_timestamp_reseted - arrival_timestamp_reseted))*max_charging_rate < energy_requested:
+        ...
+        # raise ValueError('Maximum charging rate is too low to satisfy EVs demands')
     res_ev_reseted = [start_of_day,
                   arrival_time,
                   arrival_timestamp_reseted,
@@ -331,25 +339,54 @@ def cost_values_per_day(cost_values):
     # Show the plot
     plt.show()
 # can work for
-def mpe_cost_graph(mpe_values,cost_values):
-    x_values = range(len(mpe_values))
+def mpe_cost_graph(
+        mpe_values_offline,
+        mpe_values_env,
+        cost_values_offline,
+        cost_values_env,
+        colors_of_graphs,
+        legends_of_graphs,
+        number_of_days=14,
+        path_to_save=''):
+    # mpe_values_per_alg,cost_values_per_alg two dimensional array
+    # in case of offline and mpc algorithm gamma = 1 - mpe
+    # trade off between mpe and cumulative costs (not averaged)
+
 
     plt.figure(figsize=(10, 5))
-    plt.plot(mpe_values, cost_values, marker='o', linestyle='-', color='b')
+    for i in range(2):
+
+        mpe_values_of_given_alg = []
+        costs_of_given_alg = []
+        if i == 0 and mpe_values_env is not None and cost_values_env is not None:
+            mpe_values_of_given_alg = mpe_values_env
+            costs_of_given_alg = cost_values_env / number_of_days
+        elif i == 1 and mpe_values_offline is not None and cost_values_offline is not None:
+            mpe_values_of_given_alg = mpe_values_offline
+            costs_of_given_alg = cost_values_offline / number_of_days
+        elif len(mpe_values_of_given_alg) == 0 and len(costs_of_given_alg) == 0:
+            continue
+        plt.plot(mpe_values_of_given_alg, costs_of_given_alg,
+                 marker='o', linestyle='-', color=colors_of_graphs[i])
+
 
     # Adding labels and title
     # plt.title('Mean Squared Error per Day')
     plt.xlabel('MPE')
-    plt.ylabel('Cena')
+    plt.ylabel('Priemerné kumulatívne ceny')
     # plt.xticks(x_values)  # Set x ticks to be the indices
     plt.grid()
-    plt.legend()
+    plt.legend(legends_of_graphs)
 
     plt.ylim(bottom=0)
     plt.xlim(left=0, right=1)
+    if len(path_to_save) == 0:
+        # Show the plot
+        plt.show()
+    else:
+        plt.savefig(path_to_save)
+        plt.close()
 
-    # Show the plot
-    plt.show()
 
 def get_ut_signals_from_schedule(schedule:np.array):
     cols = schedule.shape[1]
@@ -411,13 +448,17 @@ def plot_departures_for_given_day(evs, day, period):
     plt.xlim(left=0, right=24)
     # Show the plot
     plt.show()
+#
+def convert_mwh_to_kwh_prices(prices, time_between_timesteps):
+    return (prices / 1000)
 
 def comparison_pilot_signal_real_signal_graph(ut_signals,
                                               cumulative_charging_rates,
                                               period,
-                                              opt_signals=None):
+                                              path_to_save=''):
     x_values = np.arange(0, 24, (period/60))
     plt.figure(figsize=(10, 5))
+    divisor = (period/60)
     plt.plot(x_values, ut_signals, marker='o', linestyle='-', color='b')
     plt.plot(x_values, cumulative_charging_rates, marker='o', linestyle='-', color='r')
     # if opt_signals is not None:
@@ -429,13 +470,85 @@ def comparison_pilot_signal_real_signal_graph(ut_signals,
     # plt.xticks(x_values)  # Set x ticks to be the indices
     plt.xticks(np.arange(0, 25, 1))
     plt.grid()
+    plt.legend(['Hodnoty ut signálu', 'Hodnoty st plánu nabíjania'], fontsize='medium')
+
+    plt.ylim(bottom=0)
+    plt.xlim(left=0, right=24)
+    if len(path_to_save) == 0:
+        plt.show()
+    else:
+        plt.savefig(path_to_save)
+        plt.close()
+    # Show the plot
+    #
+
+def comparison_of_pilot_signal_real_signal_graph_kwh(ut_signals,
+                                                     cumulative_charging_rates,
+                                                     period,
+                                                     path_to_save=''):
+    x_values = np.arange(0, 24, (period / 60))
+    plt.figure(figsize=(10, 5))
+    divisor = (period / 60)
+    new_ut_signals = np.array(ut_signals) / divisor
+    new_cumulative_charging_rates = np.array(cumulative_charging_rates) / divisor
+
+
+    ut_signals_kwh = np.zeros(shape=(len(new_ut_signals)))
+    cumulative_charging_rates_kwh = np.zeros(shape=(len(cumulative_charging_rates)))
+    num_of_signals_per_hour = int(60/(period))
+    for i in range(len(ut_signals)):
+        if i == 0:
+            ut_signals_kwh[i] = 0
+            cumulative_charging_rates_kwh[i] = 0
+        ut_signals_kwh[i] = np.mean(new_ut_signals[i-num_of_signals_per_hour:i])
+        cumulative_charging_rates_kwh[i] = np.mean(new_cumulative_charging_rates[i-num_of_signals_per_hour:i])
+    plt.plot(x_values, ut_signals_kwh, marker='o', linestyle='-', color='b')
+    plt.plot(x_values, cumulative_charging_rates_kwh, marker='o', linestyle='-', color='r')
+    # if opt_signals is not None:
+    #     plt.plot(x_values, opt_signals, marker='o', linestyle='-', color='k')
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Hodiny')
+    plt.ylabel('Energia (kWh)')
+    # plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.xticks(np.arange(0, 25, 1))
+    plt.grid()
     plt.legend(['Hodnoty ut signálu', 'Množstvá dodanej energie pre všetky t'], fontsize='medium')
 
     plt.ylim(bottom=0)
     plt.xlim(left=0, right=24)
-    # Show the plot
-    plt.show()
+    if len(path_to_save) == 0:
+        plt.show()
+    else:
+        plt.savefig(path_to_save)
+        plt.close()
+def comparison_of_different_algorithms(cumulative_charging_rates,
+                                              period,
+                                              opt_signals,
+                                              path_to_save=''):
+    x_values = np.arange(0, 24, (period / 60))
+    divisor = (period/60)
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_values, np.array(cumulative_charging_rates), marker='o', linestyle='-', color='r')
+    if opt_signals is not None:
+        plt.plot(x_values, np.array(opt_signals), marker='o', linestyle='-', color='k')
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Hodiny')
+    plt.ylabel('Sila (kW)')
+    # plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.xticks(np.arange(0, 25, 1))
+    plt.grid()
+    plt.legend([ 'PPC','Offline optimal'], fontsize='medium')
 
+    plt.ylim(bottom=0)
+    plt.xlim(left=0, right=24)
+    if len(path_to_save) == 0:
+        plt.show()
+    else:
+        plt.savefig(path_to_save)
+        # Show the plot
+        plt.close()
 # seems the costs are cumulative but i dont understand why they have such value
 def charging_in_time_graph(ut_signals_offline,
                            period,
@@ -459,18 +572,21 @@ def charging_in_time_graph(ut_signals_offline,
     plt.xlim(left=0, right=24)
     # Show the plot
     plt.show()
-
-def plot_costs(costs,period,ticks_after_hours=1):
+def convert_kw_to_mwh(signal, period):
+    return (signal * (period/60))/1000
+def plot_costs(costs,period,
+               ticks_after_hours=1,
+               path_to_save=''):
     x_values = np.arange(0, 24, period / 60)
     # Plotting the MSE values
     plt.figure(figsize=(10, 5))
-    plt.plot(x_values, costs, marker='o', linestyle='-', color='b')
+    plt.plot(x_values, costs, linestyle='-', color='b')
 
     # Adding labels and title
     # plt.title('Mean Squared Error per Day')
     plt.xlabel('Hodiny')
     # find slovak translation of MSE
-    plt.ylabel('Cena za 1kW')
+    plt.ylabel('Cena ($/MWh)')
 
     plt.xticks(np.arange(0, 25, 1))
 
@@ -480,36 +596,40 @@ def plot_costs(costs,period,ticks_after_hours=1):
     plt.ylim(bottom=0)
     plt.xlim(left=0, right=24)
     # Show the plot
-    plt.show()
+    if len(path_to_save) == 0:
+        plt.show()
+    else:
+        plt.savefig(path_to_save)
+        plt.close()
 
+# caclulates for opt not for rl algorithm
 # assumes that schedule is a matrix where column is charging plan for time t
 def calculate_cumulative_costs(schedule:np.array,cost_vector):
     res = 0
+    overall_sum_of_charging_rates = 0
     cols = schedule.shape[1]
     for i in range(cols):
-        res += math.fsum(cost_vector[i] * schedule[:, i])
+            signal = math.fsum(schedule[:, i])
+            res += signal * cost_vector[i]
+        # if lmp:
+        #     signal = math.fsum(schedule[:,i])
+        #     # res += ((signal*(60/period))/1000) * cost_vector[i]
+        #     res += ((signal * (60 / period)) / 1000) * cost_vector[i]
+        # else:
+        #     res += math.fsum(cost_vector[i] * schedule[:, i])
     return res
 
-def calculate_cumulative_costs_given_ut(uts:np.array,cost_vector):
+def calculate_cumulative_costs_given_ut(uts:np.array,cost_vector, period=12):
     res = 0
     for i, ut in enumerate(uts, start=0):
-        res += uts * cost_vector[i]
+            res += ut * cost_vector[i]
     return res
-
-
-def generate_random_colors(n):
-    # Get a list of all named colors
-    colors = list(mcolors.CSS4_COLORS.keys())
-
-    # Randomly select n unique colors
-    selected_colors = random.sample(colors, n)
-
-    return selected_colors
 
 # assumes that costs_per_alg is 2 dimensional and each element are costs for specific alg
 def costs_per_day_graph(costs_per_alg,
                         legend_names_in_order,
-                        colors_of_graphs):
+                        colors_of_graphs,
+                        path_to_save=''):
     costs_per_alg = np.array(costs_per_alg)
     if costs_per_alg.ndim == 1:
         costs_per_alg = [costs_per_alg]
@@ -522,19 +642,25 @@ def costs_per_day_graph(costs_per_alg,
     # plt.title('Mean Squared Error per Day')
     plt.xlabel('Dni')
     # find slovak translation of MSE
-    plt.ylabel('Kumulatívna cena energie')
+    plt.ylabel('Kumulatívna ceny')
     plt.xticks(x_values)  # Set x ticks to be the indices
     plt.grid()
     plt.legend(legend_names_in_order)
 
     plt.ylim(bottom=0)
-    # Show the plot
-    plt.show()
+    if len(path_to_save) == 0:
+        # Show the plot
+        plt.show()
+    else:
+        plt.savefig(path_to_save)
+        plt.close()
 def mpe_per_day_graph(mpe_values_per_alg,
                       legend_names_in_order,
-                      colors_of_graphs
+                      colors_of_graphs,
+                      path_to_save='',
+                      percentual=True
                       ):
-    mpe_values_per_alg = np.array(mpe_values_per_alg)
+    mpe_values_per_alg = np.array(mpe_values_per_alg) if not percentual else np.array(mpe_values_per_alg)*100
     if mpe_values_per_alg.ndim == 1:
         mpe_values_per_alg = [mpe_values_per_alg]
     plt.figure(figsize=(10, 5))
@@ -554,26 +680,37 @@ def mpe_per_day_graph(mpe_values_per_alg,
     # plt.title('Mean Squared Error per Day')
     plt.xlabel('Dni')
     # find slovak translation of MSE
-    plt.ylabel('MPE')
+    if percentual:
+        plt.ylabel('MPE (%)')
+    if not percentual:
+        plt.ylabel('MPE')
     plt.xticks(x_values)  # Set x ticks to be the indices
     plt.grid()
     plt.legend(legend_names_in_order)
 
     # Set y-axis limits from 0 to 1
-    plt.ylim(0, 1)
-
-    # Show the plot
-    plt.show()
+    if not percentual:
+        plt.ylim(0, 1)
+    if percentual:
+        plt.ylim(0, 100)
+    if len(path_to_save) == 0:
+        # Show the plot
+        plt.show()
+    else:
+        plt.savefig(path_to_save)
+        plt.close()
 def mse_per_day_graph(mse_values_per_alg,
                       legend_names_in_order,
-                      colors_of_graphs):
+                      colors_of_graphs,
+                      path_to_save='',
+                      percentual=True):
     # Create an array of indices (x values)
 
     # Plotting the MSE values
     plt.figure(figsize=(10, 5))
     # plt.plot(x_values, mse_values, marker='o', linestyle='-', color='b', label='MSE Values')
 
-    mse_values_per_alg = np.array(mse_values_per_alg)
+    mse_values_per_alg = np.array(mse_values_per_alg) if not percentual else np.array(mse_values_per_alg) *100
     if mse_values_per_alg.ndim == 1:
         mse_values_per_alg = [mse_values_per_alg]
     plt.figure(figsize=(10, 5))
@@ -585,7 +722,10 @@ def mse_per_day_graph(mse_values_per_alg,
     # plt.title('Mean Squared Error per Day')
     plt.xlabel('Dni')
     # find slovak translation of MSE
-    plt.ylabel('MSE')
+    if not percentual:
+        plt.ylabel('MSE')
+    if percentual:
+        plt.ylabel('MSE (%)')
     plt.xticks(x_values)  # Set x ticks to be the indices
     plt.grid()
     plt.legend(legend_names_in_order)
@@ -593,13 +733,18 @@ def mse_per_day_graph(mse_values_per_alg,
     # Set y-axis limits from 0 to 1
     # plt.ylim(0, 1)
     # Show the plot
-    plt.show()
+    if len(path_to_save) == 0:
+        plt.show()
+    else:
+        plt.savefig(path_to_save)
+        plt.close()
 # draws barchart for one day
 def draw_barchart_sessions_from_RL(dict_of_evs,
                                    dict_of_arrivals_and_departures,
                                    tick_after_bars=10,
                                    charging_date=None,
-                                   alg='PPC'):
+                                   alg='PPC',
+                                   path_to_save=''):
     energies_requested = []
     energies_undelivered = []
     for key, value in dict_of_evs.items():
@@ -611,7 +756,7 @@ def draw_barchart_sessions_from_RL(dict_of_evs,
     # Add titles and labels
     # plt.title('Sample Bar Chart', fontsize=16)
     plt.xlabel('Nabíjanie elektromobily', fontsize=12)
-    plt.ylabel('Energia (kW)', fontsize=12)
+    plt.ylabel('Energia (kWh)', fontsize=12)
 
     # Add gridlines
     plt.grid(axis='y', linestyle='--', alpha=0.7)
@@ -630,8 +775,12 @@ def draw_barchart_sessions_from_RL(dict_of_evs,
     else:
         formatted_date = charging_date.strftime("%Y-%m-%d")  # Format: YYYY-MM-DD
         plt.title(f'Dodaná energia elektromobilom (deň: {formatted_date}) pri použití {alg} algoritmu')
-    # Show the plot
-    plt.show()
+    if len(path_to_save) == 0:
+        # Show the plot
+        plt.show()
+    else:
+        plt.savefig(path_to_save)
+        plt.close()
 
 
 # assume that evs is dict (it can change) possibly not because we plot for specific day so key is important
@@ -663,7 +812,7 @@ def draw_barchart_sessions(schedule:np.array, evs_dict_reseted,
         # Add titles and labels
         # plt.title('Sample Bar Chart', fontsize=16)
         plt.xlabel('Nabíjanie elektromobily', fontsize=12)
-        plt.ylabel('Energia (kW)', fontsize=12)
+        plt.ylabel('Energia (kWh)', fontsize=12)
 
         # Add gridlines
         plt.grid(axis='y', linestyle='--', alpha=0.7)
@@ -803,6 +952,7 @@ def get_evs_data_from_document_advanced_settings(
         allow_overday_charging=True,
         include_weekends=False,
         max_charging_rate_within_interval=None,
+        dates_in_ios_format=False
 
 
 ):
@@ -812,9 +962,15 @@ def get_evs_data_from_document_advanced_settings(
     with open(document, 'r') as file:
         data = json.load(file)
         for ev in data["_items"]:
-            date_format = '%a, %d %b %Y %H:%M:%S GMT'
-            connection_time = datetime.strptime(ev['connectionTime'], date_format)
-            disconnect_time = datetime.strptime(ev['disconnectTime'], date_format)
+            connection_time = None
+            disconnect_time = None
+            if dates_in_ios_format:
+                connection_time = datetime.fromisoformat(ev['connectionTime'])
+                disconnect_time = datetime.fromisoformat(ev['disconnectTime'])
+            else:
+                date_format = '%a, %d %b %Y %H:%M:%S GMT'
+                connection_time = datetime.strptime(ev['connectionTime'], date_format)
+                disconnect_time = datetime.strptime(ev['disconnectTime'], date_format)
 
             la_lt = pytz.timezone('America/Los_Angeles')
             connection_time = connection_time.astimezone(la_lt)
@@ -832,6 +988,10 @@ def get_evs_data_from_document_advanced_settings(
             if not allow_overday_charging and connection_time.date() != disconnect_time.date():
                 continue
             if not (start <= connection_time <= end):
+                continue
+            if not (connection_time <= disconnect_time):
+                continue
+            if not (energy_requested >= 0):
                 continue
             arrival_timestamp_reseted = datetime_to_timestamp(start=start_of_day, chosen_date=connection_time, period=period)
             departure_timestamp_reseted = datetime_to_timestamp(start=start_of_day, chosen_date=disconnect_time,
@@ -879,10 +1039,83 @@ def get_evs_data_from_document_advanced_settings(
                 del date_to_evs_dict_timestamp_not_reseted[key]
                 del date_to_evs_dict_time_not_normalised[key]
                 continue
-    return date_to_evs_dict_timestamp_reseted,date_to_evs_dict_timestamp_not_reseted, date_to_evs_dict_time_not_normalised
+    return (date_to_evs_dict_timestamp_reseted,
+            date_to_evs_dict_timestamp_not_reseted,
+            date_to_evs_dict_time_not_normalised)
 
 
+def plot_hourly_arrivals(evs_time_not_normalised, title=''):
+    arrivals_in_time = np.zeros(shape=(24,))
+    for key, value in evs_time_not_normalised.items():
+        for v in value:
+            ev_index, connection_time,disconnect_time,maximum_charging_rate,energy_requested = v
+            arrivals_in_time[connection_time.hour] += 1
+    plt.figure(figsize=(10, 5))
+    plt.plot(np.arange(0, 24, 1), arrivals_in_time, marker='o', linestyle='-', color='b')
 
+    plt.title(title)
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Hodiny')
+    plt.ylabel('Počet prichodov elektromobilov')
+    # plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.xticks(np.arange(0, 24, 1))
+    plt.grid()
+    plt.legend()
+
+    plt.ylim(bottom=0)
+    plt.xlim(left=0, right=24)
+    # Show the plot
+    plt.show()
+def plot_hourly_requested_energy(evs_time_not_normalised, title=''):
+    requested_energy_in_time = np.zeros(shape=(24,))
+    for key, value in evs_time_not_normalised.items():
+        for v in value:
+            ev_index, connection_time, disconnect_time, maximum_charging_rate, energy_requested = v
+            for t in range(24):
+                if connection_time.hour <= t <= disconnect_time.hour:
+                    requested_energy_in_time[t] += energy_requested
+    plt.figure(figsize=(10, 5))
+    plt.plot(np.arange(0, 24, 1), requested_energy_in_time, marker='o', linestyle='-', color='b')
+
+    plt.title(title)
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Hodiny')
+    plt.ylabel('Množstvo požadovanej energie')
+    # plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.xticks(np.arange(0, 24, 1))
+    plt.grid()
+    plt.legend()
+
+    plt.ylim(bottom=0)
+    plt.xlim(left=0, right=24)
+    # Show the plot
+    plt.show()
+
+def plot_hourly_departures(evs_time_not_normalised, title=''):
+    departures_in_time = np.zeros(shape=(24,))
+    for key, value in evs_time_not_normalised.items():
+        for v in value:
+            ev_index, connection_time, disconnect_time, maximum_charging_rate, energy_requested = v
+            departures_in_time[disconnect_time.hour] += 1
+    plt.figure(figsize=(10, 5))
+    plt.plot(np.arange(0, 24, 1), departures_in_time, marker='o', linestyle='-', color='b')
+
+    plt.title(title)
+    # Adding labels and title
+    # plt.title('Mean Squared Error per Day')
+    plt.xlabel('Hodiny')
+    plt.ylabel('Počet odchod elektromobilov')
+    # plt.xticks(x_values)  # Set x ticks to be the indices
+    plt.xticks(np.arange(0, 24, 1))
+    plt.grid()
+    plt.legend()
+
+    plt.ylim(bottom=0)
+    plt.xlim(left=0, right=24)
+    # Show the plot
+    plt.show()
 
 
 # caltech's website for ev data is not accessible, therefore we don't often use this function for extracting input data
@@ -930,7 +1163,9 @@ def get_evs_data_from_document(
 def create_table(charging_profiles_matrix,
                  charging_cost_vector,
                  period,
-                 show_charging_costs=False):
+                 capacity_in_time,
+                 show_charging_costs=False,
+                 path_to_save=''):
     '''
     Creates table of charging rates for a whole day
     Args:
@@ -948,51 +1183,75 @@ def create_table(charging_profiles_matrix,
     rows = [f'{i + 1}.auto' for i in range(len(charging_profiles_matrix))] + ['Celkové množstvo nabitej energie']
     data['čas (v hodinách)'] = [f'{i + 1}.auto' for i in range(len(charging_profiles_matrix))]
     data['čas (v hodinách)'].append('Súčet nabitej energie v čase')
+    data['čas (v hodinách)'].append('Kapacita v čase')
     if show_charging_costs:
-        data['čas (v hodinách)'].append('Náklady spotrebiteľov energie v čase')
+        data['čas (v hodinách)'].append('Náklady spotrebitelov za nabijanie energie v čase')
     start_hour = 0
     end_hour = 24
     overall_costs_for_evs_charging_per_hour = []
+    overall_costs_for_energy_that_is_allocated_for_ev_charging = []
     values = np.zeros(shape=(len(charging_profiles_matrix) + 1,len(list(range(start_hour, end_hour))) + 1))
     for i in range(start_hour, end_hour):
+        # charging rates and prices for 1 hour 0:5, ...
         charging_rates = charging_profiles_matrix[:, (i * timesteps_per_hour):((i + 1) * timesteps_per_hour)]
         current_prices = charging_cost_vector[(i * timesteps_per_hour):((i + 1) * timesteps_per_hour)]
         # data[f'{i + 1}'] = list(np.around(np.sum(charging_rates, axis=1),decimals=3)) + [round(np.sum(charging_rates,axis=None),3)]
-
+        capacities = capacity_in_time[(i * timesteps_per_hour):((i + 1) * timesteps_per_hour)]
         if show_charging_costs:
-            charging_ev_cost = charging_rates @ current_prices
+            charging_ev_cost = (charging_rates) @ current_prices
+            energy_allocated_costs = [capacities[i]*current_prices[i] for i in range(len(current_prices))]
             data[f'{i + 1}'] = (list(np.sum(charging_rates, axis=1)) +
                                 [np.sum(charging_rates, axis=None)] +
+                                [math.fsum(capacities)] +
                                 [math.fsum(charging_ev_cost)])
             overall_costs_for_evs_charging_per_hour.append(math.fsum(charging_ev_cost))
+            overall_costs_for_energy_that_is_allocated_for_ev_charging.append(math.fsum(energy_allocated_costs))
         else:
             data[f'{i + 1}'] = (list(np.sum(charging_rates, axis=1)) +
-                                [np.sum(charging_rates, axis=None)])
+                                [np.sum(charging_rates, axis=None)] +
+                                [math.fsum(capacities)])
         # values[:,i] = list(np.around(np.sum(charging_rates, axis=1),decimals=3)) + [round(np.sum(charging_rates,axis=None),3)]
         values[:, i] = (list(np.sum(charging_rates, axis=1)) +
                         [np.sum(charging_rates, axis=None)])
+    # tu pri vypocte cien zmenit kwh na kw
     overall_charged_energy_per_ev = list(np.sum(charging_profiles_matrix, axis=1))
+    # fixnut este
     if show_charging_costs:
         data[f'{start_hour}-{end_hour}'] = (overall_charged_energy_per_ev +
                                             [sum(overall_charged_energy_per_ev)] +
+                                            [sum(capacity_in_time)]+
                                             [math.fsum(overall_costs_for_evs_charging_per_hour)])
-        data[f'({start_hour}-{end_hour})'] = (list(charging_profiles_matrix @
+        data[f'({start_hour}-{end_hour})'] = (list((charging_profiles_matrix) @
                                                   charging_cost_vector.T) +
-                                              [math.fsum(overall_costs_for_evs_charging_per_hour)] + ['-'])
+                                              [math.fsum(overall_costs_for_evs_charging_per_hour)] + [math.fsum(overall_costs_for_energy_that_is_allocated_for_ev_charging)] + ['-'])
     else:
         data[f'{start_hour}-{end_hour}'] = (overall_charged_energy_per_ev +
-                                            [sum(overall_charged_energy_per_ev)])
+                                            [math.fsum(overall_charged_energy_per_ev)]+
+                                            [math.fsum(capacity_in_time)])
     # values[:,-1] = overall_charged_energy_per_ev + [sum(overall_charged_energy_per_ev)]
 
 
     df = pd.DataFrame(data)
     print(df)
-    df.to_csv('results.csv')
+    if len(path_to_save) == 0:
+        df.to_csv('results.csv')
+    else:
+        df.to_csv(path_to_save)
 
-
-
+def get_hourly_ut(uts, period):
+    steps = (60//period)
+    res = []
+    for i in range(1,24+1):
+        res.append(np.mean(uts[steps*(i-1):steps*i]))
+    return np.array(res)
 # evs = [[arrival,departure,requested_energy], ...]
-def save_evs_to_file(filename, evs, evs_with_time_not_normalised, timestamped_time= False, with_labels=False):
+def save_evs_to_file(filename,
+                     evs,
+                     evs_with_time_not_normalised,
+                     timestamped_time= False,
+                     with_labels=False,
+                     set_maximum_charging_rate=None,
+                     period=12):
     # Open the file for writing
     all_evs = []
     all_evs_time_not_normalised = []
@@ -1012,6 +1271,10 @@ def save_evs_to_file(filename, evs, evs_with_time_not_normalised, timestamped_ti
         for i, ev in enumerate(all_evs, start=1):
             index, arrival, departure, maximum_charging_rate, requested_energy = ev
             index, arrival_not_normalised, departure_not_normalised, maximum_charging_rate, requested_energy = all_evs_time_not_normalised[i - 1]
+            # requested_energy/= (period/60)
+            if set_maximum_charging_rate is not None:
+                maximum_charging_rate = set_maximum_charging_rate
+            # maximum_charging_rate /= (period/60)
             if timestamped_time is False:
                 arrival_not_normalised_minutes_str = str(
                     arrival_not_normalised.minute)
@@ -1026,7 +1289,7 @@ def save_evs_to_file(filename, evs, evs_with_time_not_normalised, timestamped_ti
                     # f.write(f'auto {i}: {arrival_not_normalised.hour}:{arrival_not_normalised_minutes_str}, '
                     #         f'{departure_not_normalised.hour}:{departure_not_normalised_minutes_str}, {maximum_charging_rate} kW, {requested_energy} kW\n')
                     f.write(f'{i}.auto: {arrival_not_normalised.hour}:{arrival_not_normalised_minutes_str}, '
-                            f'{departure_not_normalised.hour}:{departure_not_normalised_minutes_str}, {maximum_charging_rate} kW, {requested_energy} kW\n')
+                            f'{departure_not_normalised.hour}:{departure_not_normalised_minutes_str}, {maximum_charging_rate} kW, {requested_energy} kWh\n')
                 if with_labels:
                     # f.write(f'auto {i}:  a_{i} = {arrival_not_normalised.hour}:{arrival_not_normalised_minutes_str}, '
                     #         f'd_{i} = {departure_not_normalised.hour}:{departure_not_normalised_minutes_str}, r_{i} = {maximum_charging_rate} kW, e_{i} = {requested_energy}\n')
@@ -1081,44 +1344,116 @@ def bisection_search_Pt(EVs,
             lower_bound_Pt = middle
     # we should use upper bound to make sure we have enough energy
     return upper_bound_Pt
+def undelivered_energy_file_rl(filename, evs_to_undelivered_dict):
+    with open(filename, 'w') as f:
+        f.write('auto i: nedodana energia, pozadovana energia \n')
+        total_undelivered_energy = 0
+        total_requested_energy = 0
+        for key,value in evs_to_undelivered_dict.items():
+            requested_energy, undelivered_energy = value
+            if undelivered_energy < 0:
+                undelivered_energy = 0
+            total_undelivered_energy += undelivered_energy
+            total_requested_energy += requested_energy
+
+            f.write(f'auto {key}:{undelivered_energy} kWh, {requested_energy} kWh \n')
+        f.write(f'Celkova nedodana energia {total_undelivered_energy} kWh \n')
+        f.write(f'Celkova pozadovana energia {total_requested_energy} kWh')
+def write_xt_states_into_file(filename,xts):
+    with open(filename, 'w') as f:
+        for i, xt in enumerate(xts, start=0):
+            f.write(f't = {i} \n')
+            f.write(f'{str(xt)}\n \n')
 
 
-# TODO: if the problem is feasible or not - rather not because sometimes we dont know if it is feasible
-# TODO: if cost function not specified, write from what cost array consists of - rather not
-# TODO: change names of variables so they are the same across the whole project
+def write_into_file_operator_optimisation(filename, pts, generated_uts, costs_per_u, results, beta, U):
+    with open(filename,'w') as f:
+        f.write(f'Format: \n')
+        f.write('casovy krok t \n'
+                'mnozina U \n '+
+                'flexibilita pt \n' +
+                'ceny jednotlivych ut \n' +
+                'beta  \n'+
+                'hodnoty ct(ut) - B*log pt pre kazde u \n'+
+                'vybrate (vyhladene) ut \n \n'
+                )
+        for i,pt in enumerate(pts, start=0):
+            f.write(f't = {i} \n')
+            f.write(f'U = {str(U)} \n \n')
+            f.write(f'pt = {str(pt)}\n')
+            f.write(f'c(uts) = {str(costs_per_u[i])}\n')
+            f.write(f'beta = {str(beta)}\n')
+            f.write(f'ct(ut) - B*log pt pre kazde ut = {results[i]} \n')
+            f.write(f'vybrate (vyhladene) ut {generated_uts[i]} \n \n')
+
+
+
+def undelivered_energy_file(filename, evs, charging_plan):
+
+    with open(filename, 'w') as f:
+        f.write('auto i: nedodana energia, pozadovana energia \n')
+        total_undelivered_energy = 0
+        total_requested_energy = 0
+        for ev in evs:
+
+            index, arrival_time,departure_time, maximum_charging_rate, requested_energy = ev
+            undelivered_energy = math.fsum(charging_plan[index]) - requested_energy
+            if undelivered_energy < 0:
+                undelivered_energy = 0
+            total_undelivered_energy += undelivered_energy
+            total_requested_energy += requested_energy
+
+            f.write(f'auto {index}:{undelivered_energy} kWh, {requested_energy} kWh \n')
+        f.write(f'Celkova nedodana energia {total_undelivered_energy} kWh\n')
+        f.write(f'Celkova pozadovana energia {total_requested_energy} kWh')
+def write_evaluation_rewards_into_file(filename, charging_days_list, rewards):
+    with open(filename, 'w') as f:
+        f.write('Testovaci den = priemerne odmeny za dany den (epizodu)\n')
+        for i,rew in enumerate(rewards, start=0):
+            f.write(f'{charging_days_list[i]} = {rew} \n')
+
 
 def create_settings_file(filename,
                          evs_num:int,
                          start:datetime,
                          end:datetime,
                          time_horizon:list,
-                         available_energy_for_each_timestep,
                          number_of_evse:int,
                          period:int,
                          algorithm_name:str,
                          charging_networks_chosen:list,
                          garages_chosen:list,
                          cost_function:str='t',
-                         solver_name:str='ECOS'):
+                         operational_constraint=150,
+                         manually_computed_costs_hourly = None,
+                         solver_name:str='SCIP',
+                         set_of_signals=None):
     with open(filename, 'w') as f:
         f.write(f'Pocet aut = {evs_num}\n')
         f.write(f'zaciatok nabijania = {start}\n')
         f.write(f'koniec nabijania = {end}\n')
+        f.write(f'casova zona =  Amerika/Los Angeles\n')
         f.write(f'Dlzka casoveho horizontu T = {len(time_horizon)}\n')
-        f.write(f'Cenova funkcia: c_nt = {cost_function}\n')
+        if manually_computed_costs_hourly is None:
+            f.write(f'Cenova funkcia: c_nt = {cost_function}\n')
+        else:
+            ...
+            # f.write(f'Ceny za 1kW po hodinach {manually_computed_costs_hourly}\n')
         f.write(f'Pocet nabijaciek = {number_of_evse}\n')
         charging_networks_str = ', '.join(charging_networks_chosen)
         garages_str = ', '.join(garages_chosen)
         f.write(f'Data o autach sme ziskali z nabijacich stanic {charging_networks_str} a z ich garazi {garages_str}\n')
         # f.write(f'')
-        f.write(f'P(t) = {available_energy_for_each_timestep}\n')
+        # f.write(f'P(t) = {available_energy_for_each_timestep}\n')
+        f.write(f'Operacne obmedzenia = ut <= {operational_constraint}kW\n')
         f.write(f'Cas medzi susednymi casovymi krokmi = {period} min\n')
         f.write(f'Pouzity algoritmus = {algorithm_name}\n')
-        if algorithm_name == 'sLLF' or algorithm_name == 'LLF':
-            ...
+        f.write(f'Pouzity Offline optimal solver = {solver_name}\n')
+        if set_of_signals is None:
+            set_u = np.linspace(0,150,10)
+            f.write(f'Mnozina uskutocnitelnych akcii U = {set_u}\n')
         else:
-            f.write(f'Pouzity LP solver = {solver_name}')
-
+            f.write(f'Mnozina uskutocnitelnych akcii U = {set_of_signals}\n')
 def mpe_for_more_days(schedule_for_each_day, evs_for_each_day):
     overall_energy_delivered = 0
     overall_energy_requested = 0
@@ -1130,11 +1465,28 @@ def mpe_for_more_days(schedule_for_each_day, evs_for_each_day):
     return overall_energy_delivered / overall_energy_requested
 
 
-def mse_error_fun_rl_testing(sum_of_charging_rates, ut_signals, capacity_constraint):
+def mse_error_fun_rl_testing(sum_of_charging_rates, ut_signals, capacity_constraint,period=12):
     res_mse_error = 0
     for col in range(len(sum_of_charging_rates)):
-        res_mse_error += abs(sum_of_charging_rates[col] - ut_signals[col])**2 / capacity_constraint
+        res_mse_error += abs(sum_of_charging_rates[col] - ut_signals[col])**2 / (capacity_constraint* (period/60))
     return res_mse_error
+# for given gamma or beta
+def calculate_mpe_from_charging_rates_over_all_days(charging_rates, evs_for_each_day, charging_days_list):
+    overall_energy_delivered = 0
+    overall_energy_requested = 0
+    for k in range(len(charging_rates)):
+        specific_day = charging_days_list[k]
+        evs_for_specific_day = evs_for_each_day[specific_day]
+        for i in range(len(evs_for_specific_day)):
+            index,arrival,departure, maximum_charging_rate,energy_requested = evs_for_specific_day[i]
+            overall_energy_requested += energy_requested
+            for t in range(len(charging_rates[k][i])):
+                overall_energy_delivered += charging_rates[k][i][t]
+    return 1 - (overall_energy_delivered/ overall_energy_requested)
+
+
+
+
 def mpe_error_fun_rl_testing(ev_diction):
     overall_energy_requested = 0
     overall_energy_delivered = 0
@@ -1169,6 +1521,7 @@ def load_locational_marginal_prices(filename,organization, period):
         raise ValueError('Filename must end with .csv')
     num_of_steps = int(60/period)
     hours = []
+    prices_hourly = []
     prices = np.zeros(shape=(int((24*60)/period)))
     # Load and iterate over the CSV file
     with open(f'{filename}', mode='r') as file:
@@ -1185,6 +1538,7 @@ def load_locational_marginal_prices(filename,organization, period):
             price = float(price)
             if given_organisation == organization:
                 prices[i*num_of_steps:(i+1)*num_of_steps] = price
+                prices_hourly.append(price)
                 i += 1
             elif organization is None:
                 if len(hours) > 0 and date == hours[-1]:
@@ -1194,6 +1548,7 @@ def load_locational_marginal_prices(filename,organization, period):
                 if len(hours) > 0 and date != hours[-1]:
                     average /= num
                     prices[i * num_of_steps:(i + 1) * num_of_steps] = average
+                    prices_hourly.append(average)
                     i += 1
                     num = 1
                     average = price
@@ -1203,13 +1558,52 @@ def load_locational_marginal_prices(filename,organization, period):
                 hours.append(date)
                 average += price
                 num += 1
+
         if organization is None:
             average /= num
+            prices_hourly.append(average)
             prices[i * num_of_steps:(i + 1) * num_of_steps] = average
             hours.append(date)
 
-        return prices
+        return prices_hourly, prices
+#
+def load_locational_marginal_prices_per_year(filenames, period, organisation=None):
+    possible_organisations = ['PGAE', 'SCE', 'SDGE', 'VEA']
+    average_lmps_hourly = np.zeros(shape=(24,))
+    num_of_organisations = 4
+    start_of_year = datetime(2016, 1, 1)
+    start_of_next_year = datetime(2017, 1, 1)
 
+    # Calculate the difference in days
+    days_in_year = (start_of_next_year - start_of_year).days
+    last_hour = 0
+    for i in range(len(filenames)):
+        row_num = 0
+        with open(f'{filenames[i]}', mode='r') as file:
+            csv_reader = csv.reader(file)
+            for index, row in enumerate(csv_reader):
+                if row_num == 0:
+                    row_num += 1
+                    continue
+                date, price, given_organisation = row
+                if organisation is not None and given_organisation != organisation:
+                    continue
+                price = float(price)
+                # Define the format that matches the input string
+                date_format = '%m/%d/%Y %I:%M:%S %p'
+
+                # Convert the string to datetime
+                date_obj = datetime.strptime(date, date_format)
+                average_lmps_hourly[date_obj.hour] += price
+                row_num += 1
+    if organisation is None:
+        average_lmps_hourly /= num_of_organisations
+    average_lmps_hourly /= days_in_year
+    average_lmps_per_timestep = []
+    for i in range(int((24*60)/period)):
+        index = int(i // (60 / period))
+        average_lmps_per_timestep.append(average_lmps_hourly[index])
+    return average_lmps_hourly, average_lmps_per_timestep
 def default_settings_json_file():
     # learning starts parameter we can possibly change
     # action space shouldnt be a problem looking at relu activation function
@@ -1298,7 +1692,32 @@ def create_dataset(arrival_timestamps,
 def convert_timestep_to_hours(timestep, time_between_timesteps):
     return (timestep*time_between_timesteps) / 60
 
+def save_data_to_json_via_acn_api(start,
+                          end,
+                          site,
+                          path_to_file_save,
+                          token="DEMO_TOKEN",
+                          min_kwh=None
+                          ):
+    client = DataClient(token)
+    docs = client.get_sessions_by_time(site, start, end)
+    data_diction = {"meta":{}, "_items":[]}
 
+    data_diction["meta"]["start"] = datetime.isoformat(start)
+    data_diction["meta"]["end"] = datetime.isoformat(end)
+    data_diction["meta"]["site"] = site
+    data_diction["meta"]["min_kWh"] = min_kwh
+    for d in docs:
+
+        d['connectionTime'] = datetime.isoformat(d['connectionTime'])
+        d['disconnectTime'] = datetime.isoformat(d['disconnectTime'])
+        if d['doneChargingTime'] is not None:
+            d['doneChargingTime'] = datetime.isoformat(d['doneChargingTime'])
+
+        data_diction["_items"].append(d)
+
+    with open(path_to_file_save, "w") as json_file:
+        json.dump(data_diction, json_file, indent=4)
 
 class FigureRecorderCallback(BaseCallback):
     def __init__(self, verbose=0):
