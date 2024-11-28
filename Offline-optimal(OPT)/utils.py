@@ -1186,6 +1186,7 @@ def create_table(charging_profiles_matrix,
     data['čas (v hodinách)'].append('Kapacita v čase')
     if show_charging_costs:
         data['čas (v hodinách)'].append('Náklady spotrebitelov za nabijanie energie v čase')
+        data['čas (v hodinách)'].append('Náklady za alkovanú energiu v čase')
     start_hour = 0
     end_hour = 24
     overall_costs_for_evs_charging_per_hour = []
@@ -1203,7 +1204,8 @@ def create_table(charging_profiles_matrix,
             data[f'{i + 1}'] = (list(np.sum(charging_rates, axis=1)) +
                                 [np.sum(charging_rates, axis=None)] +
                                 [math.fsum(capacities)] +
-                                [math.fsum(charging_ev_cost)])
+                                [math.fsum(charging_ev_cost)] +
+                                [math.fsum(energy_allocated_costs)])
             overall_costs_for_evs_charging_per_hour.append(math.fsum(charging_ev_cost))
             overall_costs_for_energy_that_is_allocated_for_ev_charging.append(math.fsum(energy_allocated_costs))
         else:
@@ -1220,10 +1222,14 @@ def create_table(charging_profiles_matrix,
         data[f'{start_hour}-{end_hour}'] = (overall_charged_energy_per_ev +
                                             [sum(overall_charged_energy_per_ev)] +
                                             [sum(capacity_in_time)]+
-                                            [math.fsum(overall_costs_for_evs_charging_per_hour)])
+                                            [math.fsum(overall_costs_for_evs_charging_per_hour)] +
+                                            [math.fsum(overall_costs_for_energy_that_is_allocated_for_ev_charging)])
         data[f'({start_hour}-{end_hour})'] = (list((charging_profiles_matrix) @
                                                   charging_cost_vector.T) +
-                                              [math.fsum(overall_costs_for_evs_charging_per_hour)] + [math.fsum(overall_costs_for_energy_that_is_allocated_for_ev_charging)] + ['-'])
+                                              [math.fsum(overall_costs_for_evs_charging_per_hour)] +
+                                              [math.fsum(overall_costs_for_energy_that_is_allocated_for_ev_charging)] +
+                                              ['-'] +
+                                              ['-'])
     else:
         data[f'{start_hour}-{end_hour}'] = (overall_charged_energy_per_ev +
                                             [math.fsum(overall_charged_energy_per_ev)]+
@@ -1365,7 +1371,26 @@ def write_xt_states_into_file(filename,xts):
             f.write(f't = {i} \n')
             f.write(f'{str(xt)}\n \n')
 
+def write_st_vs_ut_into_file(filename,sts,uts):
+    with open(filename, 'w') as f:
+        f.write('format: t, ut, st, abs(ut-st) \n')
+        for i, ut in enumerate(uts, start=0):
+            f.write(f't = {i} \n')
+            f.write(f'{ut},{sts[i]},{abs(ut - sts[i])}\n \n')
 
+def write_entrophy_to_file(filename,normalised_pts,entropies):
+    with open(filename, 'w') as f:
+        f.write('format: t, pt, H(pt)\n')
+        for i, pt in enumerate(normalised_pts, start=0):
+            f.write(f't = {i} \n')
+            f.write(f'pt = {pt},H(pt) = {entropies[i]}\n \n')
+
+def write_energy_demands_penalty(filename, energy_demands_penalties):
+    with open(filename, 'w') as f:
+        f.write('format: t, penalizacia za nedodanie energie (neskalovana)\n')
+        for i, penalty in enumerate(energy_demands_penalties, start=0):
+            f.write(f't = {i} \n')
+            f.write(f'penalizacia = {penalty}\n \n')
 def write_into_file_operator_optimisation(filename, pts, generated_uts, costs_per_u, results, beta, U):
     with open(filename,'w') as f:
         f.write(f'Format: \n')
@@ -1465,10 +1490,10 @@ def mpe_for_more_days(schedule_for_each_day, evs_for_each_day):
     return overall_energy_delivered / overall_energy_requested
 
 
-def mse_error_fun_rl_testing(sum_of_charging_rates, ut_signals, capacity_constraint,period=12):
+def mse_error_fun_rl_testing(sum_of_charging_rates, ut_signals, capacity_constraint):
     res_mse_error = 0
     for col in range(len(sum_of_charging_rates)):
-        res_mse_error += abs(sum_of_charging_rates[col] - ut_signals[col])**2 / (capacity_constraint* (period/60))
+        res_mse_error += abs(sum_of_charging_rates[col] - ut_signals[col])**2 / (capacity_constraint)
     return res_mse_error
 # for given gamma or beta
 def calculate_mpe_from_charging_rates_over_all_days(charging_rates, evs_for_each_day, charging_days_list):

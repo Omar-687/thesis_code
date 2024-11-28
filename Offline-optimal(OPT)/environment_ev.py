@@ -27,8 +27,10 @@ class EVenvironment(gymnasium.Env):
                  charging_stations=None,
                  load_data_via_json=True,
                  data_files = None,
+                 # o1=0.1,
                  o1=0.1,
                  o2=0.2,
+                 # o2=0.2,
                  # o2=0.2,
                  # o1=0.1,
                  # o2=0.2,
@@ -58,6 +60,7 @@ class EVenvironment(gymnasium.Env):
         self.action_space = spaces.Box(low=low_bound_action_space, high=upper_bound_action_space)
 
 
+        self.entropies_for_each_step = []
         self.chosen_day_index = 0
         self.charging_stations = charging_stations
         self.activated_evse = np.zeros(shape=(self.evse,))
@@ -69,7 +72,7 @@ class EVenvironment(gymnasium.Env):
         self.power_limit = power_limit
         self.delta = (self.time_between_timesteps/60)
         # self.signal_buffer = deque(maxlen=3)
-        self.signal_buffer = deque(maxlen=5)
+        self.signal_buffer = deque(maxlen=1)
         self.max_charging_rate = max_charging_rate
         self.tuning_parameter = tuning_parameter
         self.timestep = 0
@@ -88,10 +91,13 @@ class EVenvironment(gymnasium.Env):
         self.max_timestep =  int((60 * 24) / self.time_between_timesteps) - 1
         self.smoothing = True
         self.current_time = 0
-        self.smoothing_coeff = 0.4
+        self.smoothing_coeff = 0
+        self.max_ramp_rate = 30
+        # self.smoothing_coeff = 0
         self.normalised_pts = []
         self.costs_per_u = []
         self.optim_results_per_u = []
+        self.not_fully_charged_before_departure_penalties = []
         self.aggregator_states_for_each_timestep = []
         self.chosen_ut_for_each_timestep = []
         self.chosen_sum_of_charging_rates = []
@@ -107,19 +113,15 @@ class EVenvironment(gymnasium.Env):
     def ppc(self, c_t, p_t):
         costs_per_u = [0.0 for i in range(self.power_levels)]
         optim_results_per_u = [0.0 for i in range(self.power_levels)]
-        low = 0
-        high = self.power_limit
+        previous_u_t = np.mean(self.signal_buffer)
+        low = max(previous_u_t - self.max_ramp_rate, 0)
+        high = min(previous_u_t + self.max_ramp_rate,self.power_limit)
         # generate static power signals
-        u_ts = np.linspace(low, high, num=self.power_levels)
+        u_ts = np.linspace(low, high, num=self.power_levels )
+        # u_ts[1] = self.max_charging_rate
         min_value = np.inf
         min_value_index = 0
         for i in range(self.power_levels):
-            # if p_t[i] == 1:
-            #     min_value_index = i
-            #     break
-            # action generated with such flexibility doesnt guarantee feasibility
-            costs = (c_t * u_ts[i])
-            # if self.costs_in_kwh:
             costs = c_t * (u_ts[i] * self.delta)
             costs_per_u[i] = costs
             if p_t[i] == 0:
@@ -136,17 +138,13 @@ class EVenvironment(gymnasium.Env):
             self.normalised_pts.append(p_t)
             self.costs_per_u.append(costs_per_u)
             self.optim_results_per_u.append(optim_results_per_u)
+
         chosen_ut_index = min_value_index
+
         res = u_ts[chosen_ut_index]
-        # num = 0
-        # for previous_ut in self.signal_buffer:
-        #     solution += previous_ut
-        #     num += 1
-            # res = (u_ts[chosen_ut_index] + self.chosen_ut_for_each_timestep[-1])/2
-        # solution += res
-        # num += 1
-        # solution /= num
         res = ((self.smoothing_coeff)*np.mean(self.signal_buffer)) + ((1 - self.smoothing_coeff)*res)
+        # else:
+        #     res = 0
         self.signal_buffer.append(res)
         # if self.smoothing:
         #     res = self.smoothing_coeff * np.mean(self.signal_buffer) + (1 - self.smoothing_coeff) * res
@@ -236,20 +234,18 @@ class EVenvironment(gymnasium.Env):
         not_fully_charged_until_departure_penalty = 0
         for i in range(self.evse):
             ev_map_to_obs = i * 2
-            # covers two cases
-            # 1. when evse are not active, in that case we dont update anything
-            # 2. when evse are active and evs have not finished charging - in that case we update state
-            # update remaining charging time and remaining energy to be charged
+            if self.activated_evse[i] == 0:
+                continue
             given_energy_to_ev_on_evse = schedule[i]
-            self.aggregator_state[ev_map_to_obs] -= min(self.delta,
-                                                        self.aggregator_state[ev_map_to_obs])
+            self.aggregator_state[ev_map_to_obs] -= self.delta
             delivered_energy = min(given_energy_to_ev_on_evse,
                                    self.aggregator_state[ev_map_to_obs + 1])
             self.aggregator_state[ev_map_to_obs + 1] -=  delivered_energy
             if not self.train:
                 self.charging_rates_matrix[int(self.evse_map_to_ev[i])][int(self.timestep)] = delivered_energy
 
-            if self.aggregator_state[ev_map_to_obs] == 0 and self.activated_evse[i] == 1:
+            # self.aggregator_state[ev_map_to_obs] == 0
+            if self.aggregator_state[ev_map_to_obs] < self.delta and self.activated_evse[i] == 1:
                 undelivered_energy = self.aggregator_state[ev_map_to_obs + 1]
                 not_fully_charged_until_departure_penalty += undelivered_energy
                 index_of_ev = self.evse_map_to_ev[i]
@@ -265,11 +261,7 @@ class EVenvironment(gymnasium.Env):
                 #     index_of_ev = self.evse_map_to_ev[i]
                 #     self.delivered_and_undelivered_energy[index_of_ev].append(undelivered_energy)
 
-        # normal_3rdterm = self.o3*abs(self.signal_ut - math.fsum(schedule))**2/self.power_rating
-        # mse = self.o3*abs(self.signal_ut - math.fsum(schedule_in_kw))**2/self.power_limit
-        # third_term = self.o3 * abs(self.signal_ut - math.fsum(schedule_in_kw))
         third_term = self.o3 * abs((self.signal_ut*self.delta) - math.fsum(schedule))
-        # mse = self.o3 * abs(self.signal_ut - math.fsum(schedule))
         # we include in schedule only currently charged evs
         reward = (entropy(action) + self.o1*math.fsum(schedule)
                   - self.o2 * not_fully_charged_until_departure_penalty - third_term)
@@ -289,9 +281,10 @@ class EVenvironment(gymnasium.Env):
             terminated = True
         self.chosen_ut_for_each_timestep.append(self.signal_ut)
         if not self.train:
-
+            self.entropies_for_each_step.append(entropy(action))
                 # self.cumulative_costs += self.costs_list[self.timestep] * self.signal_ut
             self.chosen_sum_of_charging_rates.append(math.fsum(schedule))
+            self.not_fully_charged_before_departure_penalties.append(not_fully_charged_until_departure_penalty)
             if not terminated:
                 self.aggregator_states_for_each_timestep.append(deepcopy(self.aggregator_state))
         info = {}
@@ -410,10 +403,12 @@ class EVenvironment(gymnasium.Env):
         self.optim_results_per_u = []
         self.aggregator_states_for_each_timestep = []
         self.dict_arrivals_departures = {}
+        self.not_fully_charged_before_departure_penalties = []
         self.signal_buffer.clear()
         self.signal_buffer.append(0)
         p_t = np.zeros(shape=(self.power_levels,))
         p_t[0] = 1
+        self.entropies_for_each_step = [entropy(p_t)]
         self.signal_ut = self.ppc(c_t=self.costs_list[self.timestep],p_t=p_t)
         self.aggregator_state[-2] = self.signal_ut
         num_of_timesteps = int((60 * 24) / self.time_between_timesteps)

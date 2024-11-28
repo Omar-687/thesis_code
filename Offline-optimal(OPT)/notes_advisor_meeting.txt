@@ -1,7 +1,0 @@
-26.9
-temy na stretnutie
-1. ze som si vybral povodny clanok do toxin liho (nevysvetlovat nic zatial lebo to nemam
-uplne implementovane)
-2. vysvetlit spraveny LLF a sLLF ukazat vystupy z testov
-3. otazka: ci si vybrat maximalnu rychlost nabijania konstantnu alebo nejakym sposobom zavislu od inych parametrov
-4. spomenut ze som testoval spravnost dat (mnozstvo pozadovanej energie > 0, atd)
