@@ -34,7 +34,9 @@ class EVenvironment(gymnasium.Env):
                  # o2=0.2,
                  # o1=0.1,
                  # o2=0.2,
+
                  o3=2,
+                 max_ramp_rate=30,
                  costs_in_kwh=False
                  # o3=0.2
                  ):
@@ -92,7 +94,7 @@ class EVenvironment(gymnasium.Env):
         self.smoothing = True
         self.current_time = 0
         self.smoothing_coeff = 0
-        self.max_ramp_rate = 30
+        self.max_ramp_rate = max_ramp_rate
         # self.smoothing_coeff = 0
         self.normalised_pts = []
         self.costs_per_u = []
@@ -100,6 +102,7 @@ class EVenvironment(gymnasium.Env):
         self.not_fully_charged_before_departure_penalties = []
         self.aggregator_states_for_each_timestep = []
         self.chosen_ut_for_each_timestep = []
+        self.set_that_ut_is_chosen_from = []
         self.chosen_sum_of_charging_rates = []
         self.charging_rates_matrix = np.array([])
         # tuples (index of ev, undelivered energy) delivered energy we will find in outside function
@@ -113,12 +116,12 @@ class EVenvironment(gymnasium.Env):
     def ppc(self, c_t, p_t):
         costs_per_u = [0.0 for i in range(self.power_levels)]
         optim_results_per_u = [0.0 for i in range(self.power_levels)]
-        previous_u_t = np.mean(self.signal_buffer)
+
+        previous_u_t = self.signal_buffer[-1]
+
         low = max(previous_u_t - self.max_ramp_rate, 0)
         high = min(previous_u_t + self.max_ramp_rate,self.power_limit)
-        # generate static power signals
-        u_ts = np.linspace(low, high, num=self.power_levels )
-        # u_ts[1] = self.max_charging_rate
+        u_ts = np.linspace(low, high, num=self.power_levels)
         min_value = np.inf
         min_value_index = 0
         for i in range(self.power_levels):
@@ -138,18 +141,11 @@ class EVenvironment(gymnasium.Env):
             self.normalised_pts.append(p_t)
             self.costs_per_u.append(costs_per_u)
             self.optim_results_per_u.append(optim_results_per_u)
+            self.set_that_ut_is_chosen_from.append(u_ts)
 
         chosen_ut_index = min_value_index
-
         res = u_ts[chosen_ut_index]
-        res = ((self.smoothing_coeff)*np.mean(self.signal_buffer)) + ((1 - self.smoothing_coeff)*res)
-        # else:
-        #     res = 0
         self.signal_buffer.append(res)
-        # if self.smoothing:
-        #     res = self.smoothing_coeff * np.mean(self.signal_buffer) + (1 - self.smoothing_coeff) * res
-        #     self.signal_buffer.append(res)
-
         return res
 
     # if costs were real time, at each timestep they would be loaded
@@ -212,7 +208,7 @@ class EVenvironment(gymnasium.Env):
 
         # change algorithm to generic after fixing errors
         # decrease accuracy if you can to have faster algorithm
-        sch_alg = LeastLaxityFirstAlg(EVs=self.charging_data,
+        sch_alg = self.scheduling_algorithm(EVs=self.charging_data,
                              start=self.charging_date,
                              end=self.end_charging_date,
                              time_between_timesteps=self.time_between_timesteps,
@@ -265,12 +261,9 @@ class EVenvironment(gymnasium.Env):
         # we include in schedule only currently charged evs
         reward = (entropy(action) + self.o1*math.fsum(schedule)
                   - self.o2 * not_fully_charged_until_departure_penalty - third_term)
-        # third part is important else there is not much to learn if ut is totally random
-        # the agent will not learn if ut is random bc it will satisfy its problems anyway for many different solutions
+
         reward = float(reward)
 
-        # if self.smoothing:
-        #     self.signal_ut = self.smoothing_coeff * self.aggregator_state[-2] + (1 - self.smoothing) * self.signal_ut
 
         self.aggregator_state[-2] = self.signal_ut
 
@@ -398,6 +391,7 @@ class EVenvironment(gymnasium.Env):
         self.chosen_sum_of_charging_rates = []
         self.chosen_ut_for_each_timestep = []
         self.delivered_and_undelivered_energy = {}
+        self.set_that_ut_is_chosen_from = []
         self.costs_per_u = []
         self.normalised_pts = []
         self.optim_results_per_u = []

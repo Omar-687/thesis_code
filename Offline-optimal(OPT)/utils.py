@@ -1257,6 +1257,8 @@ def save_evs_to_file(filename,
                      timestamped_time= False,
                      with_labels=False,
                      set_maximum_charging_rate=None,
+                     sort_by='arrival_time',
+                     sort_in_order='asc',
                      period=12):
     # Open the file for writing
     all_evs = []
@@ -1270,12 +1272,27 @@ def save_evs_to_file(filename,
     else:
         all_evs = copy.deepcopy(evs)
         all_evs_time_not_normalised = copy.deepcopy(evs_with_time_not_normalised)
+    sort_index = 1
+    if sort_by == 'arrival_time':
+        sort_index = 1
+    elif sort_by == 'departure_time':
+        sort_index = 2
+    elif sort_by == 'maximum_charging_rate':
+        sort_index = 3
+    elif sort_by == 'requested_energy':
+        sort_index = 4
+    reverse = False
+    if sort_in_order == 'asc':
+        reverse = False
+    elif sort_in_order == 'desc':
+        reverse = True
+    all_evs_time_not_normalised.sort(key=lambda x: x[sort_index], reverse=reverse)
 
     with open(filename, 'w') as f:
         f.write('format i.auto: a_i, d_i, r_i, e_i\n')
         # f.write('format i.auto: a_i, d_i, r_i\n')
         for i, ev in enumerate(all_evs, start=1):
-            index, arrival, departure, maximum_charging_rate, requested_energy = ev
+            # index, arrival, departure, maximum_charging_rate, requested_energy = ev
             index, arrival_not_normalised, departure_not_normalised, maximum_charging_rate, requested_energy = all_evs_time_not_normalised[i - 1]
             # requested_energy/= (period/60)
             if set_maximum_charging_rate is not None:
@@ -1294,16 +1311,16 @@ def save_evs_to_file(filename,
                 if with_labels is False:
                     # f.write(f'auto {i}: {arrival_not_normalised.hour}:{arrival_not_normalised_minutes_str}, '
                     #         f'{departure_not_normalised.hour}:{departure_not_normalised_minutes_str}, {maximum_charging_rate} kW, {requested_energy} kW\n')
-                    f.write(f'{i}.auto: {arrival_not_normalised.hour}:{arrival_not_normalised_minutes_str}, '
+                    f.write(f'{index+1}.auto: {arrival_not_normalised.hour}:{arrival_not_normalised_minutes_str}, '
                             f'{departure_not_normalised.hour}:{departure_not_normalised_minutes_str}, {maximum_charging_rate} kW, {requested_energy} kWh\n')
                 if with_labels:
                     # f.write(f'auto {i}:  a_{i} = {arrival_not_normalised.hour}:{arrival_not_normalised_minutes_str}, '
                     #         f'd_{i} = {departure_not_normalised.hour}:{departure_not_normalised_minutes_str}, r_{i} = {maximum_charging_rate} kW, e_{i} = {requested_energy}\n')
-                    f.write(f'{i}.auto :  a_{i} = {arrival_not_normalised.hour}:{arrival_not_normalised_minutes_str}, '
-                            f'd_{i} = {departure_not_normalised.hour}:{departure_not_normalised_minutes_str}, r_{i} = {maximum_charging_rate} kW\n')
-            else:
-                f.write(f'{i}.auto:  a_{i} = {arrival}, '
-                        f'd_{i} = {departure}, r_{i} = {maximum_charging_rate} kW\n')
+                    f.write(f'{index+1}.auto :  a_{index+1} = {arrival_not_normalised.hour}:{arrival_not_normalised_minutes_str}, '
+                            f'd_{index+1} = {departure_not_normalised.hour}:{departure_not_normalised_minutes_str}, r_{index+1} = {maximum_charging_rate} kW\n')
+            # else:
+            #     f.write(f'{i}.auto:  a_{i} = {arrival}, '
+            #             f'd_{i} = {departure}, r_{i} = {maximum_charging_rate} kW\n')
 
 
 def convert_dict_evs_to_list_evs(evs:dict):
@@ -1362,11 +1379,12 @@ def undelivered_energy_file_rl(filename, evs_to_undelivered_dict):
             total_undelivered_energy += undelivered_energy
             total_requested_energy += requested_energy
 
-            f.write(f'auto {key}:{undelivered_energy} kWh, {requested_energy} kWh \n')
+            f.write(f'auto {key+1}:{undelivered_energy} kWh, {requested_energy} kWh \n')
         f.write(f'Celkova nedodana energia {total_undelivered_energy} kWh \n')
         f.write(f'Celkova pozadovana energia {total_requested_energy} kWh')
 def write_xt_states_into_file(filename,xts):
     with open(filename, 'w') as f:
+        f.write(f'format t, observation space = [xt+1,ut,t] \n')
         for i, xt in enumerate(xts, start=0):
             f.write(f't = {i} \n')
             f.write(f'{str(xt)}\n \n')
@@ -1389,24 +1407,27 @@ def write_energy_demands_penalty(filename, energy_demands_penalties):
     with open(filename, 'w') as f:
         f.write('format: t, penalizacia za nedodanie energie (neskalovana)\n')
         for i, penalty in enumerate(energy_demands_penalties, start=0):
-            f.write(f't = {i} \n')
+            f.write(f't = {i+1} \n')
             f.write(f'penalizacia = {penalty}\n \n')
-def write_into_file_operator_optimisation(filename, pts, generated_uts, costs_per_u, results, beta, U):
+def write_into_file_operator_optimisation(filename, pts, generated_uts, costs_per_u, results, beta, U,maximum_ramp_rate):
     with open(filename,'w') as f:
+        # najst preklad ramp rate
         f.write(f'Format: \n')
         f.write('casovy krok t \n'
-                'mnozina U \n '+
+                'mnozina Ut \n '+
+                'maximalna miera sklonu medzi ut-1 a ut \n' +
                 'flexibilita pt \n' +
-                'ceny jednotlivych ut \n' +
+                'ceny jednotlivych ut (ct(Ut)) \n' +
                 'beta  \n'+
                 'hodnoty ct(ut) - B*log pt pre kazde u \n'+
-                'vybrate (vyhladene) ut \n \n'
+                'vybrate ut \n \n'
                 )
         for i,pt in enumerate(pts, start=0):
             f.write(f't = {i} \n')
-            f.write(f'U = {str(U)} \n \n')
+            f.write(f'Ut = {str(U[i])} \n')
+            f.write(f'maximalna miera sklonu medzi ut-1 a ut  = {maximum_ramp_rate}kW \n \n')
             f.write(f'pt = {str(pt)}\n')
-            f.write(f'c(uts) = {str(costs_per_u[i])}\n')
+            f.write(f'ct(Ut) = {str(costs_per_u[i])}\n')
             f.write(f'beta = {str(beta)}\n')
             f.write(f'ct(ut) - B*log pt pre kazde ut = {results[i]} \n')
             f.write(f'vybrate (vyhladene) ut {generated_uts[i]} \n \n')
@@ -1452,7 +1473,8 @@ def create_settings_file(filename,
                          operational_constraint=150,
                          manually_computed_costs_hourly = None,
                          solver_name:str='SCIP',
-                         set_of_signals=None):
+                         set_of_signals=None,
+                         ramp_rate=None):
     with open(filename, 'w') as f:
         f.write(f'Pocet aut = {evs_num}\n')
         f.write(f'zaciatok nabijania = {start}\n')
@@ -1467,18 +1489,23 @@ def create_settings_file(filename,
         f.write(f'Pocet nabijaciek = {number_of_evse}\n')
         charging_networks_str = ', '.join(charging_networks_chosen)
         garages_str = ', '.join(garages_chosen)
-        f.write(f'Data o autach sme ziskali z nabijacich stanic {charging_networks_str} a z ich garazi {garages_str}\n')
-        # f.write(f'')
+        # f.write(f'Data o autach sme ziskali z nabijacich stanic {charging_networks_str} a z ich garazi {garages_str}\n')
+        f.write(f'Agenti su trenovani na datach z caltechu a jpl, od 1.11.2018 do 1.12.2019 \n')
         # f.write(f'P(t) = {available_energy_for_each_timestep}\n')
+        # f.write(f'Maximum ramp rate u PPC = {ramp_rate}\n')
         f.write(f'Operacne obmedzenia = ut <= {operational_constraint}kW\n')
         f.write(f'Cas medzi susednymi casovymi krokmi = {period} min\n')
         f.write(f'Pouzity algoritmus = {algorithm_name}\n')
         f.write(f'Pouzity Offline optimal solver = {solver_name}\n')
         if set_of_signals is None:
             set_u = np.linspace(0,150,10)
-            f.write(f'Mnozina uskutocnitelnych akcii U = {set_u}\n')
+            f.write(f'Mnozina uskutocnitelnych akcii offline optimalneho algoritmu U su vsetky realne cisla od 0 po 150kW \n')
+            f.write(f'Mnozina uskutocnitelnych akcii U pre PPC = konecny pocet akcii medzi 0 a 150kW (zjednotenie Ut cez t)\n')
+
         else:
-            f.write(f'Mnozina uskutocnitelnych akcii U = {set_of_signals}\n')
+            f.write(f'Mnozina uskutocnitelnych akcii offline optimalneho algoritmu U su vsetky realne cisla od 0 po 150kW \n')
+
+            f.write(f'Mnozina uskutocnitelnych akcii U pre PPC = konecny pocet akcii medzi 0 a 150kW (zjednotenie Ut cez t)\n')
 def mpe_for_more_days(schedule_for_each_day, evs_for_each_day):
     overall_energy_delivered = 0
     overall_energy_requested = 0

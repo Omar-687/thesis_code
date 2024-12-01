@@ -227,8 +227,6 @@ class moretestsRL(unittest.TestCase):
         # testing phase
         start_testing = la_tz.localize(datetime(2019, 12, 2, 0, 0, 0))
         end_testing = la_tz.localize(datetime(2020, 1, 1, 23, 59, 59))
-        # possibly necessary to increase power limit and power levels due to intensity
-        # depending on the data max charging rate will have to be increased
         maximum_charging_rate = 10
         time_between_timesteps = 12
         number_of_evse = 54
@@ -260,7 +258,6 @@ class moretestsRL(unittest.TestCase):
         cost_plot_file = 'cost_function.png'
         plot_costs(costs=costs_loaded_manually, period=time_between_timesteps,
                    path_to_save=path_to_outer_directory + cost_plot_file)
-        # costs_loaded_manually *= 1000
         costs_loaded_manually = convert_mwh_to_kwh_prices(np.array(costs_loaded_manually),
                                                           time_between_timesteps=time_between_timesteps)
         cost_per_hour_man = convert_mwh_to_kwh_prices(np.array(cost_per_hour_man),
@@ -283,6 +280,8 @@ class moretestsRL(unittest.TestCase):
             save_evs_to_file(filename=path_to_directory + evs_data_file,
                              evs_with_time_not_normalised=evs_time_not_normalised[
                                  charging_date],
+                             sort_by='arrival_time',
+                             sort_in_order='asc',
                              evs=evs_timestamp_reset_list,
                              set_maximum_charging_rate=maximum_charging_rate)
             settings_data_file = 'settings.txt'
@@ -304,6 +303,7 @@ class moretestsRL(unittest.TestCase):
 
 
         scheduling_algorithm = LeastLaxityFirstAlg
+        # scheduling_algorithm = SmoothedLeastLaxityAlg
         charging_days_list = list(evs_timestamp_reset.keys())
 
         k_days = len(charging_days_list)
@@ -365,7 +365,9 @@ class moretestsRL(unittest.TestCase):
         # without zip, it loads automatically the zip file
         # models_directories = [f'resulting_models/beta=1e6/{site}/sac_10',
         #                       f'resulting_models/beta=6e3/{site}/sac_13']
-        models_directories = ['SavedModels/ev_experiments1/sac_24']
+        models_directories = ['SavedModels/ev_experiments1/sac_25']
+        # models_directories = ['SavedModels/ev_experiments1/sac_33'] sllf same param as sac_25
+        # models_directories = ['SavedModels/ev_experiments1/sac_35']
         number_of_models_tested = len(models_directories)
         cumulative_costs_per_env = np.zeros(shape=(1 + number_of_models_tested, k_days))
         mses_per_env = np.zeros(shape=(number_of_models_tested, k_days))
@@ -373,6 +375,7 @@ class moretestsRL(unittest.TestCase):
 
         power_levels_per_env = [10]
         power_limits_per_env = [150]
+        max_ramp_rates_per_env = [30]
         for model_index, chosen_beta in enumerate(possible_betas, start=0):
             # loading of different setups in future, maybe through json file
             eval_env = EVenvironment(scheduling_algorithm=scheduling_algorithm,
@@ -384,7 +387,8 @@ class moretestsRL(unittest.TestCase):
                                      train=False,
                                      evse=number_of_evse,
                                      max_charging_rate=maximum_charging_rate,
-                                     costs_in_kwh=True)
+                                     costs_in_kwh=True,
+                                     max_ramp_rate=max_ramp_rates_per_env[model_index])
             model = SAC.load(models_directories[model_index])
             day_num = 0
             options = {
@@ -451,14 +455,15 @@ class moretestsRL(unittest.TestCase):
                                                evs_to_undelivered_dict=eval_env.delivered_and_undelivered_energy)
 
                     ppc_info_filename = f'ppc_inputs_outputs_beta={string_representation_of_beta}.txt'
-                    U = np.linspace(0, eval_env.power_limit, eval_env.power_levels)
+                    # U = np.linspace(0, eval_env.power_limit, eval_env.power_levels)
                     write_into_file_operator_optimisation(filename=env_path + ppc_info_filename,
                                                           beta=chosen_beta,
                                                           pts=eval_env.normalised_pts,
-                                                          U=U,
+                                                          U=eval_env.set_that_ut_is_chosen_from,
                                                           generated_uts=eval_env.chosen_ut_for_each_timestep,
                                                           costs_per_u=eval_env.costs_per_u,
-                                                          results=eval_env.optim_results_per_u)
+                                                          results=eval_env.optim_results_per_u,
+                                                          maximum_ramp_rate=eval_env.max_ramp_rate)
 
                     xts_file = f'xts_values_beta={string_representation_of_beta}.txt'
                     write_xt_states_into_file(filename=env_path + xts_file,
@@ -481,7 +486,7 @@ class moretestsRL(unittest.TestCase):
                                  period=time_between_timesteps,
                                  show_charging_costs=True,
                                  path_to_save=env_path + table_file_name,
-                                 capacity_in_time=ut_signals)
+                                 capacity_in_time=ut_signals*(time_between_timesteps/60))
 
 
                     day_num += 1
@@ -491,11 +496,11 @@ class moretestsRL(unittest.TestCase):
                     evaluation_rewards.append(episode_reward)
                     episode_reward = 0
                     obs, info = eval_env.reset(options=options)
-        # reward per each beta in future
-        # rewards_file = 'evaluation_rewards.txt'
-        # write_evaluation_rewards_into_file(filename=path_to_outer_directory + rewards_file,
-        #                                    charging_days_list=charging_days_list,
-        #                                    rewards=evaluation_rewards)
+        # reward per each beta in future (possibly) now it works only for 1 beta
+        rewards_file = 'evaluation_rewards.txt'
+        write_evaluation_rewards_into_file(filename=path_to_outer_directory + rewards_file,
+                                           charging_days_list=charging_days_list,
+                                           rewards=evaluation_rewards)
         # possibly better to setup these in fixed way and change them everytime like the models too
         # legends_for_each_alg = ['beta = 1e6', 'Offline optimal']
         legends_for_each_env = ['beta = 1e6']
@@ -926,9 +931,10 @@ class moretestsRL(unittest.TestCase):
         charging_days_list_jpl = list(evs_timestamp_reset_jpl.keys())
         charging_days_per_station_list = [charging_days_list_jpl, charging_days_list_caltech]
         # charging_days_per_station_list = [charging_days_list_caltech, charging_days_list_jpl]
-        total_timesteps = 100000
+        total_timesteps = 2000000
         # total_timesteps = 240000
         scheduling_algorithm = LeastLaxityFirstAlg
+        # scheduling_algorithm = SmoothedLeastLaxityAlg
         # beta = 1e6
         beta=1e6
         ts = np.arange(0, 24, (period/60))
@@ -945,6 +951,7 @@ class moretestsRL(unittest.TestCase):
                             charging_stations=['jpl','caltech'],
                             charging_days_per_charging_station=charging_days_per_station_list,
                             data_files=[document_jpl,document_caltech],
+                            max_ramp_rate=30,
                             costs_in_kwh=False)
 
         model = SAC("MlpPolicy",
@@ -957,7 +964,7 @@ class moretestsRL(unittest.TestCase):
         # reward_function_form = ''
         model.learn(total_timesteps=total_timesteps, callback=TensorboardCallback())
 
-        model_name = 'sac_24'
+        model_name = 'sac_35'
         dir_where_saved_models_are = 'SavedModels/ev_experiments1/'
         model.save(dir_where_saved_models_are+model_name)
 

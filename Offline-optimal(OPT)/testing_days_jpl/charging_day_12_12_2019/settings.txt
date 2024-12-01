@@ -4,10 +4,10 @@ koniec nabijania = 2019-12-12 23:59:59-08:00
 casova zona =  Amerika/Los Angeles
 Dlzka casoveho horizontu T = 120
 Pocet nabijaciek = 54
-Data o autach sme ziskali z nabijacich stanic j, p, l a z ich garazi California_Garage_01, California_Garage_02, LIGO_01, N_Wilson_Garage_01, S_Wilson_Garage_01
+Agenti su trenovani na datach z caltechu a jpl, od 1.11.2018 do 1.12.2019 
 Operacne obmedzenia = ut <= 150kW
 Cas medzi susednymi casovymi krokmi = 12 min
 Pouzity algoritmus = PPC (s jednoduchym planovacim algoritmom LLF), Offline optimal
 Pouzity Offline optimal solver = SCIP
-Mnozina uskutocnitelnych akcii U = [  0.          16.66666667  33.33333333  50.          66.66666667
-  83.33333333 100.         116.66666667 133.33333333 150.        ]
+Mnozina uskutocnitelnych akcii offline optimalneho algoritmu U su vsetky realne cisla od 0 po 150kW 
+Mnozina uskutocnitelnych akcii U pre PPC = konecny pocet akcii medzi 0 a 150kW (zjednotenie Ut cez t)

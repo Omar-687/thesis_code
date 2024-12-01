@@ -1,7 +1,4 @@
 format: t, penalizacia za nedodanie energie (neskalovana)
-t = 0 
-penalizacia = 0
- 
 t = 1 
 penalizacia = 0
  
@@ -120,10 +117,10 @@ t = 39
 penalizacia = 0
  
 t = 40 
-penalizacia = 0.00014467406272883343
+penalizacia = 0
  
 t = 41 
-penalizacia = 0
+penalizacia = 0.00016218078136442937
  
 t = 42 
 penalizacia = 0
@@ -135,10 +132,10 @@ t = 44
 penalizacia = 0
  
 t = 45 
-penalizacia = 9.564810991280481e-05
+penalizacia = 0
  
 t = 46 
-penalizacia = 0
+penalizacia = 9.564810991280481e-05
  
 t = 47 
 penalizacia = 0
@@ -150,157 +147,157 @@ t = 49
 penalizacia = 0
  
 t = 50 
-penalizacia = 9.181796014312571e-05
+penalizacia = 0
  
 t = 51 
-penalizacia = 8.850097656243339e-05
+penalizacia = 9.191894531246358e-05
  
 t = 52 
-penalizacia = 0
+penalizacia = 8.850097656243339e-05
  
 t = 53 
-penalizacia = 5.381438136087269e-05
+penalizacia = 0
  
 t = 54 
-penalizacia = 0.00015023875236508388
+penalizacia = 5.381438136087269e-05
  
 t = 55 
-penalizacia = 0
+penalizacia = 0.00015012699365613003
  
 t = 56 
 penalizacia = 0
  
 t = 57 
-penalizacia = 5.93983829020317e-05
+penalizacia = 0
  
 t = 58 
-penalizacia = 5.2914250642133176e-05
+penalizacia = 5.93983829020317e-05
  
 t = 59 
-penalizacia = 0
+penalizacia = 5.2917480468761546e-05
  
 t = 60 
 penalizacia = 0
  
 t = 61 
-penalizacia = 5.599349737162029e-05
+penalizacia = 0
  
 t = 62 
-penalizacia = 0
+penalizacia = 9.519815444947177e-05
  
 t = 63 
 penalizacia = 0
  
 t = 64 
-penalizacia = 0.00010614687204357764
+penalizacia = 0
  
 t = 65 
-penalizacia = 0
+penalizacia = 0.00011115552484985969
  
 t = 66 
-penalizacia = 0.00026085702257394594
+penalizacia = 0
  
 t = 67 
-penalizacia = 9.594601101348132e-05
+penalizacia = 0.0002092181889311595
  
 t = 68 
-penalizacia = 7.252621650688518e-05
+penalizacia = 9.594601101348132e-05
  
 t = 69 
-penalizacia = 6.604051589964577e-05
+penalizacia = 9.518051147460599e-05
  
 t = 70 
-penalizacia = 0
+penalizacia = 5.337896943080622e-05
  
 t = 71 
-penalizacia = 0.00018960165977477406
+penalizacia = 0
  
 t = 72 
-penalizacia = 9.347233176226766e-05
+penalizacia = 0.0001443538874518202
  
 t = 73 
-penalizacia = 0.00020834791660306884
+penalizacia = 5.94300925731428e-05
  
 t = 74 
-penalizacia = 0.00013946381211271675
+penalizacia = 0.00023024296760554286
  
 t = 75 
-penalizacia = 1.644698643833399
+penalizacia = 0.0001279632151125476
  
 t = 76 
-penalizacia = 3.4949457167237994
+penalizacia = 0.5833707430362703
  
 t = 77 
-penalizacia = 1.332128466397524
+penalizacia = 1.4224840363264077
  
 t = 78 
-penalizacia = 2.2053312114028323
+penalizacia = 1.332128466397524
  
 t = 79 
-penalizacia = 2.1966849360465996
+penalizacia = 0.0002678532898424679
  
 t = 80 
-penalizacia = 3.853438920076936
+penalizacia = 0.00028421215873075667
  
 t = 81 
-penalizacia = 0.00014078409402279446
+penalizacia = 0.00040006080269811006
  
 t = 82 
-penalizacia = 3.1985186899619893
+penalizacia = 0.0001402811793959624
  
 t = 83 
-penalizacia = 0.9040423662584207
+penalizacia = 0.00036340873700080323
  
 t = 84 
-penalizacia = 3.0782697006016946
+penalizacia = 0.00010883127152927496
  
 t = 85 
-penalizacia = 0
+penalizacia = 1.5232561926841712
  
 t = 86 
-penalizacia = 2.6033051757812498
+penalizacia = 0
  
 t = 87 
-penalizacia = 3.072283791213806
+penalizacia = 0.14387327742576594
  
 t = 88 
-penalizacia = 1.7061596679687483
+penalizacia = 0.2073450530171391
  
 t = 89 
-penalizacia = 3.5391406250000004
+penalizacia = 9.344413876544166e-05
  
 t = 90 
-penalizacia = 1.7670561523437485
+penalizacia = 0.4381835041344169
  
 t = 91 
-penalizacia = 0
+penalizacia = 7.238405942922022e-05
  
 t = 92 
-penalizacia = 2.497219615668058
+penalizacia = 0
  
 t = 93 
-penalizacia = 2.497985569417474
+penalizacia = 0.0009203917682170104
  
 t = 94 
-penalizacia = 0
+penalizacia = 1.270495181662719
  
 t = 95 
-penalizacia = 9.21630449592925e-05
+penalizacia = 0
  
 t = 96 
-penalizacia = 0
+penalizacia = 8.743959665302725e-05
  
 t = 97 
-penalizacia = 1.2284694077968594
+penalizacia = 0
  
 t = 98 
-penalizacia = 1.1277680394559784
+penalizacia = 1.1257233497202392
  
 t = 99 
-penalizacia = 0.8355468183159829
+penalizacia = 1.2784535267283723
  
 t = 100 
-penalizacia = 0
+penalizacia = 0.8766517881453038
  
 t = 101 
 penalizacia = 0
@@ -333,10 +330,10 @@ t = 110
 penalizacia = 0
  
 t = 111 
-penalizacia = 2.84467529296875
+penalizacia = 0
  
 t = 112 
-penalizacia = 0
+penalizacia = 5.272958984375
  
 t = 113 
 penalizacia = 0
@@ -354,5 +351,8 @@ t = 117
 penalizacia = 0
  
 t = 118 
+penalizacia = 0
+ 
+t = 119 
 penalizacia = 0
  

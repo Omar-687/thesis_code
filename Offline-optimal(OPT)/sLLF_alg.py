@@ -11,16 +11,16 @@ class SmoothedLeastLaxityAlg(SchedulingAlg):
     def __init__(self, EVs,
                        start,
                        end,
-                       power_limit,
+                       power_limit=None,
                        time_between_timesteps=5,
                        accuracy=1e-8,
                        number_of_evse=54,
                        cost_function=None,
                        process_output=True,
                        costs_loaded_manually=None,
-                       info_about_future_costs=True,
-                       set_power_limit_for_each_timestep=True,
-                       set_time_horizon=True
+                       info_about_future_costs=False,
+                       set_power_limit_for_each_timestep=False,
+                       set_time_horizon=False
                        ):
         super().__init__(EVs=EVs,
                          start=start,
@@ -190,6 +190,8 @@ class SmoothedLeastLaxityAlg(SchedulingAlg):
                                                      available_energy,
                                                      number_of_evse,
                                                      activated_evse):
+        if np.sum(activated_evse) == 0:
+            return [0 for i in range(number_of_evse)]
         laxities = self.get_laxities_given_observation(observation=observation,
                                             maximum_charging_rate=maximum_charging_rate,
                                             number_of_evse=number_of_evse,
