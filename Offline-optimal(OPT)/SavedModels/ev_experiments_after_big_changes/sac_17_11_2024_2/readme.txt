@@ -1,0 +1,1 @@
+this model is kinda problematic, it has big mse and also doesnt quite charge well

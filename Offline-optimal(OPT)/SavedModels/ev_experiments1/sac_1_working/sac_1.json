@@ -1,0 +1,18 @@
+{
+    "o1": 0.1,
+    "o2": 30,
+    "o3": 1,
+    "gamma": 0.99,
+    "ramp limits": false,
+    "algorithm": "LLF",
+    "smoothing_coeff": 0.35,
+    "reward": "H(pt) + o1*sum_{t in [T]}|u_t|_2 - sum_{i=1}^{n'}(I(d(i)=t)[e(i)] - o3*mse",
+    "reward multiplied by": 0.01,
+    "number of steps": 100000,
+    "directory": "./sac/",
+    "name": "sac_21",
+    "info": "entrophy can be a number not between 0 and 1 in new implemenation + problem with late charging evs late not charged, mpe 0.1,critic loss oscilates"
+    "beta": 6e3,
+    "allow overday charging": true,
+    "comment": "overday ev charging will be eliminated, because of problems with rewards and constraints"
+}

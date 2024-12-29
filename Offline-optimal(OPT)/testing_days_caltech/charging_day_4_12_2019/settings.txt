@@ -1,0 +1,13 @@
+Pocet aut = 45
+zaciatok nabijania = 2019-12-04 00:00:00-08:00
+koniec nabijania = 2019-12-04 23:59:59-08:00
+casova zona =  Amerika/Los Angeles
+Dlzka casoveho horizontu T = 120
+Pocet nabijaciek = 54
+Agenti su trenovani na datach z caltechu a jpl, od 1.11.2018 do 1.12.2019 
+Operacne obmedzenia = ut <= 150kW
+Cas medzi susednymi casovymi krokmi = 12 min
+Pouzity algoritmus = PPC (s jednoduchym planovacim algoritmom LLF), Offline optimal
+Pouzity Offline optimal solver = SCIP
+Mnozina uskutocnitelnych akcii offline optimalneho algoritmu U su vsetky realne cisla od 0 po 150kW 
+Mnozina uskutocnitelnych akcii U pre PPC = konecny pocet akcii medzi 0 a 150kW (zjednotenie Ut cez t)
