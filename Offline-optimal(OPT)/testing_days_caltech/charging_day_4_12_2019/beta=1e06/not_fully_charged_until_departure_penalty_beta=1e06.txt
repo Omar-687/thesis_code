@@ -192,7 +192,7 @@ t = 64
 penalizacia = 8.056640625009326e-05
  
 t = 65 
-penalizacia = 5.703759734787539e-05
+penalizacia = 5.704107880588616e-05
  
 t = 66 
 penalizacia = 0
@@ -210,22 +210,22 @@ t = 70
 penalizacia = 0
  
 t = 71 
-penalizacia = 5.800080299378507e-05
+penalizacia = 9.89174246788238e-05
  
 t = 72 
-penalizacia = 8.239567279810789e-05
+penalizacia = 8.642578125006573e-05
  
 t = 73 
 penalizacia = 0
  
 t = 74 
-penalizacia = 6.119009852412205e-05
+penalizacia = 6.561946868899327e-05
  
 t = 75 
 penalizacia = 0
  
 t = 76 
-penalizacia = 9.173956513408577e-05
+penalizacia = 5.9675708413031714e-05
  
 t = 77 
 penalizacia = 6.568127870565377e-05
@@ -234,61 +234,61 @@ t = 78
 penalizacia = 0
  
 t = 79 
-penalizacia = 0.00016921430826191686
+penalizacia = 0.00016014967133826108
  
 t = 80 
 penalizacia = 0
  
 t = 81 
-penalizacia = 7.970553636549305e-05
+penalizacia = 7.116344571111988e-05
  
 t = 82 
-penalizacia = 0.00013166366517536332
+penalizacia = 0.00016897636651980186
  
 t = 83 
-penalizacia = 6.563422083849524e-05
+penalizacia = 5.74783247720978e-05
  
 t = 84 
-penalizacia = 0.00013316452503198128
+penalizacia = 0.0001396596133709238
  
 t = 85 
-penalizacia = 0.00024703091382982656
+penalizacia = 0.0001851668506860915
  
 t = 86 
-penalizacia = 0.00013333185729345887
+penalizacia = 0.0001571647152540656
  
 t = 87 
 penalizacia = 9.02965068817485e-05
  
 t = 88 
-penalizacia = 0.00014644432067877078
+penalizacia = 0.00012715113163008773
  
 t = 89 
-penalizacia = 5.944824218762079e-05
+penalizacia = 6.202616492712032e-05
  
 t = 90 
-penalizacia = 5.8290521033121934e-05
+penalizacia = 7.20643208184657e-05
  
 t = 91 
 penalizacia = 0
  
 t = 92 
-penalizacia = 0.0002506214873864432
+penalizacia = 0.00020516548160201542
  
 t = 93 
 penalizacia = 0
  
 t = 94 
-penalizacia = 0.03063671875000007
+penalizacia = 7.608732581132482e-05
  
 t = 95 
-penalizacia = 0.5333334297385189
+penalizacia = 0.9522639200405933
  
 t = 96 
 penalizacia = 0
  
 t = 97 
-penalizacia = 1.3990107421875004
+penalizacia = 1.5224238281250004
  
 t = 98 
 penalizacia = 0

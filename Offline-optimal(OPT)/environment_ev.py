@@ -121,6 +121,8 @@ class EVenvironment(gymnasium.Env):
 
         low = max(previous_u_t - self.max_ramp_rate, 0)
         high = min(previous_u_t + self.max_ramp_rate,self.power_limit)
+        # low = 0
+        # high = self.power_limit
         u_ts = np.linspace(low, high, num=self.power_levels)
         min_value = np.inf
         min_value_index = 0
@@ -134,7 +136,7 @@ class EVenvironment(gymnasium.Env):
             # np log computes log of base e
             value = costs - self.tuning_parameter * np.log(p_t[i])
             optim_results_per_u[i] = value
-            if value < min_value:
+            if value < min_value and abs(previous_u_t - u_ts[i]) <= self.max_ramp_rate and u_ts[i] <= self.power_limit:
                 min_value = value
                 min_value_index = i
         if not self.train:

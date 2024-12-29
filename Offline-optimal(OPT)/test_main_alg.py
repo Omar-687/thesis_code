@@ -366,6 +366,8 @@ class moretestsRL(unittest.TestCase):
         # models_directories = [f'resulting_models/beta=1e6/{site}/sac_10',
         #                       f'resulting_models/beta=6e3/{site}/sac_13']
         models_directories = ['SavedModels/ev_experiments1/sac_25']
+        # models_directories = ['SavedModels/ev_experiments1/sac_44']
+        # models_directories = ['SavedModels/ev_experiments1/sac_46']
         # models_directories = ['SavedModels/ev_experiments1/sac_33'] sllf same param as sac_25
         # models_directories = ['SavedModels/ev_experiments1/sac_35']
         number_of_models_tested = len(models_directories)
@@ -931,16 +933,19 @@ class moretestsRL(unittest.TestCase):
         charging_days_list_jpl = list(evs_timestamp_reset_jpl.keys())
         charging_days_per_station_list = [charging_days_list_jpl, charging_days_list_caltech]
         # charging_days_per_station_list = [charging_days_list_caltech, charging_days_list_jpl]
+        # total_timesteps = 4000000
         total_timesteps = 2000000
         # total_timesteps = 240000
-        scheduling_algorithm = LeastLaxityFirstAlg
-        # scheduling_algorithm = SmoothedLeastLaxityAlg
+        # scheduling_algorithm = LeastLaxityFirstAlg
+        scheduling_algorithm = SmoothedLeastLaxityAlg
         # beta = 1e6
         beta=1e6
         ts = np.arange(0, 24, (period/60))
         costs_loaded_manually = [(1-(ts[i]/24)) for i in range(len(ts))]
         power_limit = 150
+        # power_levels = 20
         power_levels = 10
+        ramp_rate = 30
         env = EVenvironment(scheduling_algorithm=scheduling_algorithm,
                             time_between_timesteps=period,
                             tuning_parameter=beta,
@@ -951,7 +956,7 @@ class moretestsRL(unittest.TestCase):
                             charging_stations=['jpl','caltech'],
                             charging_days_per_charging_station=charging_days_per_station_list,
                             data_files=[document_jpl,document_caltech],
-                            max_ramp_rate=30,
+                            max_ramp_rate=ramp_rate,
                             costs_in_kwh=False)
 
         model = SAC("MlpPolicy",
@@ -964,7 +969,7 @@ class moretestsRL(unittest.TestCase):
         # reward_function_form = ''
         model.learn(total_timesteps=total_timesteps, callback=TensorboardCallback())
 
-        model_name = 'sac_35'
+        model_name = 'sac_50'
         dir_where_saved_models_are = 'SavedModels/ev_experiments1/'
         model.save(dir_where_saved_models_are+model_name)
 

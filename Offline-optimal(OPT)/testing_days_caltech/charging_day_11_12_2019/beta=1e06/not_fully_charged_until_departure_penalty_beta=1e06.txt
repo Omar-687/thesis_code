@@ -192,10 +192,10 @@ t = 64
 penalizacia = 0
  
 t = 65 
-penalizacia = 5.273437499997424e-05
+penalizacia = 7.832264900209385e-05
  
 t = 66 
-penalizacia = 5.492591857909901e-05
+penalizacia = 7.068645954122488e-05
  
 t = 67 
 penalizacia = 0
@@ -213,10 +213,10 @@ t = 71
 penalizacia = 0
  
 t = 72 
-penalizacia = 0.0001357272863387604
+penalizacia = 0.00010854099690904562
  
 t = 73 
-penalizacia = 8.44538083311086e-05
+penalizacia = 5.140991904772907e-05
  
 t = 74 
 penalizacia = 0
@@ -237,61 +237,61 @@ t = 79
 penalizacia = 0
  
 t = 80 
-penalizacia = 6.328201192551397e-05
+penalizacia = 9.021788369856232e-05
  
 t = 81 
-penalizacia = 7.503998279573265e-05
+penalizacia = 8.188461454117224e-05
  
 t = 82 
 penalizacia = 9.521484374996891e-05
  
 t = 83 
-penalizacia = 0.00012808743577621962
+penalizacia = 0.00016234430670730715
  
 t = 84 
-penalizacia = 8.712649345399281e-05
+penalizacia = 7.949754595770742e-05
  
 t = 85 
 penalizacia = 0
  
 t = 86 
-penalizacia = 8.110484182910493e-05
+penalizacia = 5.498533414083351e-05
  
 t = 87 
-penalizacia = 6.609606742857821e-05
+penalizacia = 9.582233428954978e-05
  
 t = 88 
-penalizacia = 0.00015334215760232084
+penalizacia = 0.00018022970820086304
  
 t = 89 
-penalizacia = 0.2073326862117029
+penalizacia = 0.01106103515625012
  
 t = 90 
-penalizacia = 0.5259463002439018
+penalizacia = 0.662938217065026
  
 t = 91 
 penalizacia = 0
  
 t = 92 
-penalizacia = 0.6964285465180864
+penalizacia = 0.4659043236374828
  
 t = 93 
-penalizacia = 1.9694399237080653
+penalizacia = 0.7010440151740731
  
 t = 94 
 penalizacia = 0
  
 t = 95 
-penalizacia = 1.6771257815361027
+penalizacia = 1.5358969248030523
  
 t = 96 
 penalizacia = 0
  
 t = 97 
-penalizacia = 0.868878588527441
+penalizacia = 1.08994384765625
  
 t = 98 
-penalizacia = 0.8150246937274932
+penalizacia = 0.8048918509483338
  
 t = 99 
 penalizacia = 0
@@ -300,7 +300,7 @@ t = 100
 penalizacia = 0
  
 t = 101 
-penalizacia = 2.4520688476562498
+penalizacia = 1.6998105468749998
  
 t = 102 
 penalizacia = 0
